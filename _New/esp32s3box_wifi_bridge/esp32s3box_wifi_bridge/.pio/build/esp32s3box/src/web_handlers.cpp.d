@@ -147,8 +147,7 @@
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/event_groups.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/timers.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-log.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/log/include/esp_log.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/log/include/esp_log_internal.h \
+ src/esp_log.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-matrix.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-uart.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/hal/include/hal/uart_types.h \
@@ -208,10 +207,5 @@
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/libraries/WebServer/src/detail/RequestHandler.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/libraries/LittleFS/src/LittleFS.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/libraries/FS/src/FS.h \
- src/bridge.h src/bridge_nvs.h src/mavlink_state.h \
- .pio/libdeps/esp32s3box/ESP32Servo/src/ESP32Servo.h \
- .pio/libdeps/esp32s3box/ESP32Servo/src/ESP32PWM.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-ledc.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/driver/include/driver/mcpwm.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/hal/include/hal/mcpwm_types.h \
- src/web_handlers.h
+ src/bridge.h include/bridge_ui_embed.h src/bridge_nvs.h \
+ src/mavlink_state.h src/bridge_log.h src/esp_log.h src/web_handlers.h

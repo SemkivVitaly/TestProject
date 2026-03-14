@@ -85,8 +85,7 @@
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/event_groups.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/timers.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-log.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/log/include/esp_log.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/log/include/esp_log_internal.h \
+ src/esp_log.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-matrix.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-uart.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/hal/include/hal/uart_types.h \
@@ -200,6 +199,6 @@
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiUdp.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/Udp.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/cbuf.h \
- src/bridge.h \
+ src/bridge.h src/bridge_log.h src/esp_log.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiClient.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/libraries/AsyncUDP/src/AsyncUDP.h

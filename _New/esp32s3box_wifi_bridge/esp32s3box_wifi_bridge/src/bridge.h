@@ -36,4 +36,10 @@ void bridgeClearUdpClient(void);
 /** Задать UDP-клиента вручную по IP и порту (POST /api/settings/clients/udp с телом {"ip":"x.y.z.w","port":14550}). */
 void bridgeSetUdpClient(IPAddress ip, uint16_t port);
 
+/** Вызвать в loop(): отключённые TCP-клиенты очищаются; UDP-клиент сбрасывается после таймаута без пакетов. */
+void bridgePollDisconnects(void);
+
+/** Записать в buf строку "IP:port" текущего UDP-клиента (если есть). Возвращает true, если клиент известен. */
+bool bridgeGetUdpClientInfo(char* buf, size_t bufSize);
+
 #endif /* BRIDGE_H */

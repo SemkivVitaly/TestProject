@@ -11,6 +11,8 @@
 #include "config.h"
 #include <MAVLink.h>
 #include "mavlink_state.h"
+#include "bridge_log.h"
+#include "esp_log.h"
 
 extern HardwareSerial SerialUART;
 
@@ -33,9 +35,17 @@ uint32_t mavlinkPacketsRx = 0;
 uint32_t mavlinkPacketsTx = 0;
 uint32_t mavlinkPacketDrops = 0;
 
+/* Счётчики по типам сообщений (msgid) для единого лога. */
+uint32_t mavlinkRxByMsgid[256] = {0};
+uint32_t mavlinkTxByMsgid[256] = {0};
+
 /* Кольцевой лог событий MAVLink для /api/log и страницы параметров. */
 char mavlinkLog[MAVLINK_LOG_SIZE][MAVLINK_LOG_ENTRY_LEN];
 uint8_t mavlinkLogHead = 0;
+
+/* Ограничение частоты записи HEARTBEAT в кольцевой лог (раз в 10 с). */
+static uint32_t s_lastHeartbeatLogMs = 0;
+#define HEARTBEAT_LOG_INTERVAL_MS 10000
 
 /* Идентификаторы GCS в MAVLink (Mission Planner и др.). */
 static const uint8_t MAVLINK_GCS_SYSID = 255;
@@ -43,6 +53,43 @@ static const uint8_t MAVLINK_GCS_COMPID = 190;
 
 void mavlinkInitLog(void) {
     memset(mavlinkLog, 0, sizeof(mavlinkLog));
+}
+
+/** Краткое имя типа сообщения для лога. */
+const char* mavlinkGetMsgName(uint8_t msgid) {
+    static char s_name[24];
+    switch (msgid) {
+        case 0:  return "HEARTBEAT";
+        case 1:  return "SYS_STATUS";
+        case 2:  return "SYSTEM_TIME";
+        case 4:  return "PING";
+        case 20: return "PARAM_REQUEST_READ";
+        case 22: return "PARAM_VALUE";
+        case 23: return "PARAM_SET";
+        case 24: return "GPS_RAW_INT";
+        case 30: return "ATTITUDE";
+        case 33: return "GLOBAL_POSITION_INT";
+        case 35: return "RC_CHANNELS_RAW";
+        case 147: return "BATTERY_STATUS";
+        case 253: return "STATUSTEXT";
+        default:
+            snprintf(s_name, sizeof(s_name), "msg_%u", (unsigned)msgid);
+            return s_name;
+    }
+}
+
+/** Сформировать строку со счётчиками по типам для единого лога. */
+void mavlinkGetCountersString(char* buf, size_t bufSize) {
+    if (!buf || bufSize < 32) return;
+    size_t pos = 0;
+    for (int i = 0; i < 256 && pos < bufSize - 32; i++) {
+        if (mavlinkRxByMsgid[i] == 0 && mavlinkTxByMsgid[i] == 0) continue;
+        const char* name = mavlinkGetMsgName((uint8_t)i);
+        int n = snprintf(buf + pos, bufSize - pos, "%s RX=%lu TX=%lu; ",
+                        name, (unsigned long)mavlinkRxByMsgid[i], (unsigned long)mavlinkTxByMsgid[i]);
+        if (n > 0) pos += (size_t)n;
+    }
+    if (pos > 0 && buf[pos - 1] == ' ') buf[pos - 1] = '\0';
 }
 
 /** Добавить запись в кольцевой лог (время в секундах + текст). */
@@ -63,22 +110,30 @@ void mavlinkProcessBytes(const uint8_t* data, uint16_t len) {
         if (!mavlink_parse_char(MAVLINK_COMM_0, data[i], &msg, &status))
             continue;
         mavlinkPacketsRx++;
+        if (msg.msgid < 256)
+            mavlinkRxByMsgid[msg.msgid]++;
         switch (msg.msgid) {
-            case MAVLINK_MSG_ID_HEARTBEAT:
+            case MAVLINK_MSG_ID_HEARTBEAT: {
                 mavlinkConnected = true;
                 lastHeartbeatMs = millis();
                 autopilotSysId = msg.sysid;
                 autopilotCompId = msg.compid;
-                mavlinkAddLog("RX HEARTBEAT");
+                bridgeLogSetConnected(true);
+                espLogPrintf("[MAVLink] connected (HEARTBEAT)");
+                if (millis() - s_lastHeartbeatLogMs >= HEARTBEAT_LOG_INTERVAL_MS) {
+                    mavlinkAddLog("RX HEARTBEAT");
+                    s_lastHeartbeatLogMs = millis();
+                }
                 break;
+            }
             case MAVLINK_MSG_ID_PARAM_VALUE: {
                 mavlink_param_value_t pv;
                 mavlink_msg_param_value_decode(&msg, &pv);
                 pv.param_id[15] = '\0';
-                if (strcmp(pv.param_id, "SERVO1_REVERS") == 0) {
+                if (strcmp(pv.param_id, "SERVO1_REVERS") == 0 || strcmp(pv.param_id, "SERVO1_REVERSED") == 0) {
                     paramServo1Revers = pv.param_value;
                     paramServo1ReversKnown = true;
-                    mavlinkAddLog("RX PARAM_VALUE SERVO1_REVERS");
+                    mavlinkAddLog("RX PARAM_VALUE SERVO1_REVERSED");
                 } else if (strcmp(pv.param_id, "SERVO3_TRIM") == 0) {
                     paramServo3Trim = pv.param_value;
                     paramServo3TrimKnown = true;
@@ -91,6 +146,7 @@ void mavlinkProcessBytes(const uint8_t* data, uint16_t len) {
                 break;
             }
             default:
+                /* Остальные типы учитываются в mavlinkRxByMsgid[]; в кольцевой лог не пишем, чтобы не затирать редкие события. */
                 break;
         }
     }
@@ -104,6 +160,8 @@ void mavlinkCheckDisconnect(void) {
     if (millis() - lastHeartbeatMs <= MAVLINK_HEARTBEAT_TIMEOUT_MS)
         return;
     mavlinkConnected = false;
+    bridgeLogSetConnected(false);
+    espLogPrintf("[MAVLink] disconnected (no heartbeat)");
     mavlinkAddLog("DISCONNECT (no heartbeat)");
 }
 
@@ -116,10 +174,12 @@ void mavlinkSendParamRequest(const char* param_id) {
     uint16_t n = mavlink_msg_to_send_buffer(buf, &msg);
     SerialUART.write(buf, n);
     mavlinkPacketsTx++;
+    if (msg.msgid < 256)
+        mavlinkTxByMsgid[msg.msgid]++;
 }
 
 void mavlinkRequestServoParams(void) {
-    mavlinkSendParamRequest("SERVO1_REVERS");
+    mavlinkSendParamRequest("SERVO1_REVERSED");
     mavlinkSendParamRequest("SERVO3_TRIM");
     mavlinkSendParamRequest("SERVO4_TRIM");
     mavlinkAddLog("TX PARAM_REQUEST_READ (SERVO1/3/4)");
@@ -133,6 +193,8 @@ void mavlinkSendParamSet(const char* param_id, float value) {
     uint16_t n = mavlink_msg_to_send_buffer(buf, &msg);
     SerialUART.write(buf, n);
     mavlinkPacketsTx++;
+    if (msg.msgid < 256)
+        mavlinkTxByMsgid[msg.msgid]++;
     char ev[MAVLINK_LOG_ENTRY_LEN];
     snprintf(ev, sizeof(ev), "TX PARAM_SET %s", param_id);
     mavlinkAddLog(ev);
