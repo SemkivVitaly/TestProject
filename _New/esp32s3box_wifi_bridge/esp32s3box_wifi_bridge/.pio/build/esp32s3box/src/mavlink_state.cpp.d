@@ -85,8 +85,7 @@
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/event_groups.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/timers.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-log.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/log/include/esp_log.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/log/include/esp_log_internal.h \
+ src/esp_log.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-matrix.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp32-hal-uart.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/hal/include/hal/uart_types.h \
@@ -447,4 +446,4 @@
  .pio/libdeps/esp32s3box/MAVLink/mavlink/common/../standard/../minimal/minimal.h \
  .pio/libdeps/esp32s3box/MAVLink/mavlink/common/../standard/../minimal/./mavlink_msg_heartbeat.h \
  .pio/libdeps/esp32s3box/MAVLink/mavlink/common/../mavlink_get_info.h \
- src/mavlink_state.h
+ src/mavlink_state.h src/bridge_log.h src/esp_log.h

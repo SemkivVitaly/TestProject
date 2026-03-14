@@ -1,4 +1,4 @@
-.pio/build/esp32s3box/src/bridge.cpp.o: src/bridge.cpp \
+.pio/build/esp32s3box/src/esp_log.cpp.o: src/esp_log.cpp src/esp_log.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/Arduino.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/esp_arduino_version.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/freertos/include/freertos/FreeRTOS.h \
@@ -177,28 +177,4 @@
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/spi_flash/include/esp_spi_flash_counters.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_hw_support/include/soc/esp32/spiram.h \
  C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/io_pin_remap.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/Arduino.h \
- src/config.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFi.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/Print.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/IPv6Address.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiType.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiSTA.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiGeneric.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/esp_wifi/include/esp_smartconfig.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/wifi_provisioning/include/wifi_provisioning/manager.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/protocomm/include/common/protocomm.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/protocomm/include/security/protocomm_security.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/tools/sdk/esp32s3/include/wifi_provisioning/include/wifi_provisioning/wifi_config.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiAP.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiScan.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiClient.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/Client.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiServer.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/Server.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiUdp.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/Udp.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/cbuf.h \
- src/bridge.h src/bridge_log.h src/esp_log.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/libraries/WiFi/src/WiFiClient.h \
- C:/Users/vital/.platformio/packages/framework-arduinoespressif32/libraries/AsyncUDP/src/AsyncUDP.h
+ C:/Users/vital/.platformio/packages/framework-arduinoespressif32/cores/esp32/Arduino.h

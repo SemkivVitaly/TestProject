@@ -16,14 +16,17 @@
 #include <WebServer.h>
 #include <LittleFS.h>
 #include "bridge.h"
+#if __has_include("bridge_ui_embed.h")
+#include "bridge_ui_embed.h"
+#define BRIDGE_UI_EMBED_H
+#endif
 #include "bridge_nvs.h"
 #include "mavlink_state.h"
-#include <ESP32Servo.h>
+#include "bridge_log.h"
+#include "esp_log.h"
 #include "web_handlers.h"
 
 static WebServer* s_server = nullptr;
-extern Servo servo;
-extern bool servoAttached;
 
 static void sendJson(const String& s) {
     if (s_server) s_server->send(200, F("application/json"), s);
@@ -33,54 +36,19 @@ static void sendHtml(const String& html) {
     if (s_server) s_server->send(200, F("text/html; charset=utf-8"), html);
 }
 
-/** Главная страница: метрики канала (пакеты, задержка, потери), ссылки на /params и /bridge. */
+/** Главная страница: единый лог, лог пакетов, лог ESP32, управление SERVO, Bridge UI. */
 static void handleRoot() {
     sendHtml(F(
         "<!DOCTYPE html><html><head><meta charset='utf-8'><title>ESP32-S3-Box</title>"
-        "<style>.metric{background:#eee;padding:6px;margin:4px 0;border-radius:4px;} .ok{color:green;} .warn{color:orange;}</style></head><body>"
+        "<style>body{font-family:sans-serif;margin:1.5rem;} a{color:#1eaedb;} a:hover{color:#0fa0ce;}</style></head><body>"
         "<h1>ESP32-S3-Box Bridge</h1>"
-        "<div id='link_metrics' class='metric'>Загрузка метрик канала…</div>"
-        "<p><a href='/led/on'>LED Вкл</a> | <a href='/led/off'>LED Выкл</a></p>"
-        "<p>Сервопривод: <a href='/servo?angle=0'>0°</a> <a href='/servo?angle=90'>90°</a> <a href='/servo?angle=180'>180°</a></p>"
-        "<h2>MAVLink</h2>"
-        "<p><a href='/api/status'>Статус (подключение, параметры, лог)</a> | "
-        "<a href='/params'>Параметры SERVO</a> | <a href='/api/log'>Лог пакетов</a></p>"
-        "<p><a href='/status'>Общий статус (JSON)</a> | <a href='/api/link'>Метрики канала (JSON)</a> | <a href='/bridge'>Bridge UI</a></p>"
-        "<script>"
-        "function loadLink(){ var x=new XMLHttpRequest(); x.open('GET','/api/status'); x.onload=function(){"
-        "var j=JSON.parse(x.responseText); var el=document.getElementById('link_metrics');"
-        "el.innerHTML='<b>Пакеты:</b> приём '+j.packets_rx+' отпр '+j.packets_tx+' обработано '+j.packets_processed"
-        "+' | <b>Задержка:</b> '+(j.connected ? j.latency_ms+' мс' : '-')"
-        "+' | <b>Потери:</b> '+j.packet_drops+' ('+j.packet_loss_pct+'%)"
-        "+' | <b>Сеть:</b> TX '+j.bytes_network_tx+' RX '+j.bytes_network_rx+' байт'; }; x.send(); }"
-        "loadLink(); setInterval(loadLink,2000);"
-        "</script></body></html>"
+        "<p><a href='/api/log/file'>Единый лог</a></p>"
+        "<p><a href='/api/log'>Лог пакетов</a></p>"
+        "<p><a href='/api/log/esp32'>Лог ESP32</a></p>"
+        "<p><a href='/params'>Управление SERVO</a></p>"
+        "<p><a href='/bridge'>Bridge UI</a></p>"
+        "</body></html>"
     ));
-}
-
-static void handleLedOn() {
-    digitalWrite(LED_PIN, HIGH);
-    if (s_server) s_server->send(200, F("text/plain"), F("OK"));
-}
-
-static void handleLedOff() {
-    digitalWrite(LED_PIN, LOW);
-    if (s_server) s_server->send(200, F("text/plain"), F("OK"));
-}
-
-static void handleServo() {
-    if (!s_server->hasArg(F("angle"))) {
-        if (s_server) s_server->send(400, F("text/plain"), F("?angle=0..180"));
-        return;
-    }
-    int angle = constrain(s_server->arg(F("angle")).toInt(), 0, 180);
-    if (!servoAttached) {
-        servo.setPeriodHertz(50);
-        servo.attach(SERVO_PIN, 500, 2400);
-        servoAttached = true;
-    }
-    servo.write(angle);
-    if (s_server) s_server->send(200, F("text/plain"), String(angle));
 }
 
 static void handleStatus() {
@@ -98,8 +66,15 @@ static void handleApiStatus() {
     uint32_t latencyMs = mavlinkConnected ? (millis() - lastHeartbeatMs) : 0;
     uint32_t totalRx = mavlinkPacketsRx + mavlinkPacketDrops;
     float packetLossPct = (totalRx > 0) ? (100.0f * (float)mavlinkPacketDrops / (float)totalRx) : 0.0f;
+    char lastErr[64];
+    bridgeLogGetLastError(lastErr, sizeof(lastErr));
     String s;
-    s += F("{\"connected\":"); s += mavlinkConnected ? F("true") : F("false");
+    s += F("{\"uptime\":"); s += (millis() / 1000);
+    s += F(",\"free_heap\":"); s += ESP.getFreeHeap();
+    s += F(",\"connected\":"); s += mavlinkConnected ? F("true") : F("false");
+    s += F(",\"tcp_connected\":"); s += bridgeGetTcpConnectedCount();
+    s += F(",\"udp_known\":"); s += (bridgeGetUdpClientCount() > 0) ? F("true") : F("false");
+    s += F(",\"last_error\":\""); s += lastErr; s += F("\"");
     s += F(",\"last_heartbeat_ms\":"); s += lastHeartbeatMs;
     s += F(",\"packets_rx\":"); s += mavlinkPacketsRx;
     s += F(",\"packets_tx\":"); s += mavlinkPacketsTx;
@@ -109,8 +84,8 @@ static void handleApiStatus() {
     s += F(",\"latency_ms\":"); s += latencyMs;
     s += F(",\"bytes_network_tx\":"); s += bridgeBytesTxNetwork;
     s += F(",\"bytes_network_rx\":"); s += bridgeBytesRxNetwork;
-    s += F(",\"SERVO1_REVERS\":"); s += paramServo1Revers;
-    s += F(",\"SERVO1_REVERS_known\":"); s += paramServo1ReversKnown ? F("true") : F("false");
+    s += F(",\"SERVO1_REVERSED\":"); s += paramServo1Revers;
+    s += F(",\"SERVO1_REVERSED_known\":"); s += paramServo1ReversKnown ? F("true") : F("false");
     s += F(",\"SERVO3_TRIM\":"); s += paramServo3Trim;
     s += F(",\"SERVO3_TRIM_known\":"); s += paramServo3TrimKnown ? F("true") : F("false");
     s += F(",\"SERVO4_TRIM\":"); s += paramServo4Trim;
@@ -133,10 +108,10 @@ static void handleParamsPage() {
         "<style>body{font-family:sans-serif;margin:1rem;} table{border-collapse:collapse;} th,td{border:1px solid #ccc;padding:6px;} .ok{color:green;} .no{color:red;}</style>"
         "</head><body><h1>Параметры MAVLink (SERVO)</h1>"
         "<p id='conn'></p>"
-        "<p><button type='button' onclick=\"var x=new XMLHttpRequest();x.open('GET','/api/param_request');x.send();setTimeout(load,500);\">Запросить с автопилота</button></p>"
+        "<p><button type='button' onclick=\"window.paramsFrozen=false; var x=new XMLHttpRequest();x.open('GET','/api/param_request');x.send();setTimeout(load,500);\">Запросить с автопилота</button></p>"
         "<form method='post' action='/api/params'>"
         "<table><tr><th>Параметр</th><th>Значение</th><th>Получен</th></tr>"
-        "<tr><td>SERVO1_REVERS</td><td><input name='SERVO1_REVERS' id='v1' type='number' step='0.01'></td><td id='k1'>—</td></tr>"
+        "<tr><td>SERVO1_REVERSED</td><td><input name='SERVO1_REVERSED' id='v1' type='number' step='0.01'></td><td id='k1'>—</td></tr>"
         "<tr><td>SERVO3_TRIM</td><td><input name='SERVO3_TRIM' id='v2' type='number' step='0.01'></td><td id='k2'>—</td></tr>"
         "<tr><td>SERVO4_TRIM</td><td><input name='SERVO4_TRIM' id='v3' type='number' step='0.01'></td><td id='k3'>—</td></tr>"
         "</table><button type='submit'>Установить</button></form>"
@@ -145,10 +120,11 @@ static void handleParamsPage() {
         "function load(){ var x=new XMLHttpRequest(); x.open('GET','/api/status'); x.onload=function(){"
         "var j=JSON.parse(x.responseText);"
         "document.getElementById('conn').innerHTML='Подключение: '+(j.connected?'<span class=ok>Да</span>':'<span class=no>Нет</span>')+' | RX: '+j.packets_rx+' TX: '+j.packets_tx+' | Задержка: '+(j.connected?j.latency_ms:'—')+' ms | Потери: '+j.packet_drops+' ('+j.packet_loss_pct+'%)';"
-        "document.getElementById('v1').value=j.SERVO1_REVERS; document.getElementById('v2').value=j.SERVO3_TRIM; document.getElementById('v3').value=j.SERVO4_TRIM;"
-        "document.getElementById('k1').textContent=j.SERVO1_REVERS_known?'да':'—'; document.getElementById('k2').textContent=j.SERVO3_TRIM_known?'да':'—'; document.getElementById('k3').textContent=j.SERVO4_TRIM_known?'да':'—';"
+        "if(!window.paramsFrozen){document.getElementById('v1').value=j.SERVO1_REVERSED!=undefined?j.SERVO1_REVERSED:j.SERVO1_REVERS; document.getElementById('v2').value=j.SERVO3_TRIM; document.getElementById('v3').value=j.SERVO4_TRIM;} "
+        "document.getElementById('k1').textContent=(j.SERVO1_REVERSED_known||j.SERVO1_REVERS_known)?'да':'—'; document.getElementById('k2').textContent=j.SERVO3_TRIM_known?'да':'—'; document.getElementById('k3').textContent=j.SERVO4_TRIM_known?'да':'—'; "
+        "if((j.SERVO1_REVERSED_known||j.SERVO1_REVERS_known)&&j.SERVO3_TRIM_known&&j.SERVO4_TRIM_known)window.paramsFrozen=true;"
         "}; x.send(); }"
-        "load(); setInterval(load,3000);"
+        "load(); setInterval(load,5000);"
         "</script></body></html>"
     );
     sendHtml(html);
@@ -156,7 +132,7 @@ static void handleParamsPage() {
 
 static void handleParamsGet() {
     String s;
-    s += F("{\"SERVO1_REVERS\":"); s += paramServo1Revers; s += F(",\"SERVO1_REVERS_known\":"); s += paramServo1ReversKnown ? F("true") : F("false");
+    s += F("{\"SERVO1_REVERSED\":"); s += paramServo1Revers; s += F(",\"SERVO1_REVERSED_known\":"); s += paramServo1ReversKnown ? F("true") : F("false");
     s += F(",\"SERVO3_TRIM\":"); s += paramServo3Trim; s += F(",\"SERVO3_TRIM_known\":"); s += paramServo3TrimKnown ? F("true") : F("false");
     s += F(",\"SERVO4_TRIM\":"); s += paramServo4Trim; s += F(",\"SERVO4_TRIM_known\":"); s += paramServo4TrimKnown ? F("true") : F("false");
     s += F("}");
@@ -165,8 +141,8 @@ static void handleParamsGet() {
 
 static void handleParamsSet() {
     bool sent = false;
-    if (s_server->hasArg(F("SERVO1_REVERS"))) {
-        mavlinkSendParamSet("SERVO1_REVERS", s_server->arg(F("SERVO1_REVERS")).toFloat());
+    if (s_server->hasArg(F("SERVO1_REVERSED"))) {
+        mavlinkSendParamSet("SERVO1_REVERSED", s_server->arg(F("SERVO1_REVERSED")).toFloat());
         sent = true;
     }
     if (s_server->hasArg(F("SERVO3_TRIM"))) {
@@ -180,7 +156,7 @@ static void handleParamsSet() {
     if (sent)
         sendJson(F("{\"ok\":true}"));
     else if (s_server)
-        s_server->send(400, F("application/json"), F("{\"ok\":false,\"error\":\"need SERVO1_REVERS, SERVO3_TRIM or SERVO4_TRIM\"}"));
+        s_server->send(400, F("application/json"), F("{\"ok\":false,\"error\":\"need SERVO1_REVERSED, SERVO3_TRIM or SERVO4_TRIM\"}"));
 }
 
 static void handleParamRequest() {
@@ -206,9 +182,12 @@ static void handleApiLink() {
     sendJson(s);
 }
 
-/** Страница Bridge UI (из LittleFS). Нужна загрузка FS: pio run -t uploadfs. */
+/** Страница Bridge UI: из прошивки (PROGMEM) или из LittleFS. */
 static void handleBridgePage() {
     if (!s_server) return;
+#ifdef BRIDGE_UI_EMBED_H
+    s_server->send_P(200, PSTR("text/html; charset=utf-8"), (const char*)BRIDGE_UI_HTML);
+#else
     File f = LittleFS.open("/index.html", "r");
     if (!f) {
         s_server->send(404, F("text/plain"), F("Интерфейс Bridge не найден. Загрузите ФС: pio run -t uploadfs."));
@@ -216,6 +195,7 @@ static void handleBridgePage() {
     }
     s_server->streamFile(f, F("text/html; charset=utf-8"));
     f.close();
+#endif
 }
 
 static void handleApiSystemInfo() {
@@ -227,12 +207,41 @@ static void handleApiSystemInfo() {
 }
 
 static void handleApiSystemStats() {
+    int8_t rssi = 0;
+    if (WiFi.getMode() == WIFI_STA && WiFi.status() == WL_CONNECTED)
+        rssi = WiFi.RSSI();
+    uint32_t totalRx = mavlinkPacketsRx + mavlinkPacketDrops;
+    bridgeLogUpdateStats(mavlinkPacketsTx, mavlinkPacketsRx, mavlinkPacketDrops, totalRx);
+    bridgeLogUpdateRssi(rssi);
+    /* Периодически или при изменении RSSI записывать в лог (раз в 60 с или при падении > 5 dBm). */
+    {
+        static int8_t s_lastRssi = 0;
+        static uint32_t s_lastRssiLogMs = 0;
+        uint32_t now = millis();
+        if ((now - s_lastRssiLogMs >= 60000) || (rssi != 0 && (rssi < s_lastRssi - 5 || rssi > s_lastRssi + 5))) {
+            s_lastRssiLogMs = now;
+            s_lastRssi = rssi;
+            espLogPrintf("[WiFi] RSSI %d dBm", (int)rssi);
+        }
+    }
+    char udpInfo[32];
+    bool hasUdp = bridgeGetUdpClientInfo(udpInfo, sizeof(udpInfo));
     String s;
     s += F("{\"read_bytes\":"); s += bridgeBytesFromUart;
     s += F(",\"serial_dec_mav_msgs\":"); s += mavlinkPacketsRx;
     s += F(",\"tcp_connected\":"); s += bridgeGetTcpConnectedCount();
     s += F(",\"udp_connected\":"); s += bridgeGetUdpClientCount();
-    s += F(",\"udp_clients\":[],\"current_client_ip\":\"\"}");
+    s += F(",\"udp_clients\":");
+    if (hasUdp) {
+        s += F("[\""); s += udpInfo; s += F("\"]");
+    } else {
+        s += F("[]");
+    }
+    s += F(",\"current_client_ip\":\"");
+    if (hasUdp) s += udpInfo;
+    s += F("\",\"esp_rssi\":");
+    s += (int)rssi;
+    s += F("}");
     sendJson(s);
 }
 
@@ -269,20 +278,32 @@ static void handleApiSettingsClientsUdp() {
     IPAddress ip(0U);
     uint16_t port = SERIAL_UDP_PORT;
     if (body.length() > 0) {
-        int idx = body.indexOf(F("\"ip\":\""));
+        int idx = body.indexOf(F("\"udp_client_ip\":\""));
         if (idx >= 0) {
-            idx += 6;
+            idx += 19; /* длина "\"udp_client_ip\":\"" */
             int end = body.indexOf('"', idx);
-            if (end > idx) {
-                String ipStr = body.substring(idx, end);
-                if (!ip.fromString(ipStr))
-                    ip = IPAddress(0U);
+            if (end > idx)
+                ip.fromString(body.substring(idx, end));
+        }
+        if (ip == IPAddress(0U)) {
+            idx = body.indexOf(F("\"ip\":\""));
+            if (idx >= 0) {
+                idx += 6;
+                int end = body.indexOf('"', idx);
+                if (end > idx)
+                    ip.fromString(body.substring(idx, end));
             }
         }
-        idx = body.indexOf(F("\"port\":"));
+        idx = body.indexOf(F("\"udp_client_port\":"));
         if (idx >= 0) {
-            port = (uint16_t)body.substring(idx + 7).toInt();
+            port = (uint16_t)body.substring(idx + 19).toInt();  /* 19 = len("\"udp_client_port\":") */
             if (port == 0) port = SERIAL_UDP_PORT;
+        } else {
+            idx = body.indexOf(F("\"port\":"));
+            if (idx >= 0) {
+                port = (uint16_t)body.substring(idx + 7).toInt();
+                if (port == 0) port = SERIAL_UDP_PORT;
+            }
         }
     }
     if (ip != IPAddress(0U)) {
@@ -311,12 +332,23 @@ static void handleLog() {
     sendJson(s);
 }
 
+/** Единый лог: ID, подключение, статистика, WiFi dBm, счётчики по типам, образцы RX/TX, последние MAVLink события, события ESP32. */
+static void handleApiLogFile() {
+    char buf[3072];
+    bridgeLogGetText(buf, sizeof(buf));
+    if (s_server) s_server->send(200, F("text/plain; charset=utf-8"), buf);
+}
+
+/** Лог ESP32 (кольцевой буфер) — скачать. */
+static void handleApiLogEsp32() {
+    char buf[ESP_LOG_SIZE + 64];
+    size_t n = espLogGetText(buf, sizeof(buf));
+    if (s_server) s_server->send(200, F("text/plain; charset=utf-8"), buf);
+}
+
 void webSetup(WebServer& server) {
     s_server = &server;
     server.on(F("/"), handleRoot);
-    server.on(F("/led/on"), handleLedOn);
-    server.on(F("/led/off"), handleLedOff);
-    server.on(F("/servo"), handleServo);
     server.on(F("/status"), handleStatus);
     server.on(F("/api/status"), handleApiStatus);
     server.on(F("/params"), handleParamsPage);
@@ -324,6 +356,8 @@ void webSetup(WebServer& server) {
     server.on(F("/api/params"), HTTP_POST, handleParamsSet);
     server.on(F("/api/param_request"), handleParamRequest);
     server.on(F("/api/log"), handleLog);
+    server.on(F("/api/log/file"), handleApiLogFile);
+    server.on(F("/api/log/esp32"), handleApiLogEsp32);
     server.on(F("/api/link"), handleApiLink);
     server.on(F("/bridge"), handleBridgePage);
     server.on(F("/smd"), []() { if (s_server) s_server->sendHeader(F("Location"), F("/bridge"), true); if (s_server) s_server->send(302, F("text/plain"), F("")); });

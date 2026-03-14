@@ -9,6 +9,7 @@
 #define MAVLINK_STATE_H
 
 #include "config.h"
+#include <stddef.h>
 #include <stdint.h>
 #include <stdbool.h>
 
@@ -28,8 +29,18 @@ extern uint32_t mavlinkPacketsRx;
 extern uint32_t mavlinkPacketsTx;
 extern uint32_t mavlinkPacketDrops;  /* Пакеты с ошибкой CRC (для расчёта потерь в веб). */
 
+/** Счётчики приёма/передачи по типу сообщения (msgid 0..255). Для единого лога. */
+extern uint32_t mavlinkRxByMsgid[256];
+extern uint32_t mavlinkTxByMsgid[256];
+
 extern char mavlinkLog[MAVLINK_LOG_SIZE][MAVLINK_LOG_ENTRY_LEN];
 extern uint8_t mavlinkLogHead;
+
+/** Краткое имя типа сообщения для лога (HEARTBEAT, PARAM_VALUE, msg_30 и т.д.). */
+const char* mavlinkGetMsgName(uint8_t msgid);
+
+/** Записать в buf строку со счётчиками по типам (RX/TX) для единого лога. */
+void mavlinkGetCountersString(char* buf, size_t bufSize);
 
 void mavlinkInitLog(void);
 void mavlinkProcessBytes(const uint8_t* data, uint16_t len);

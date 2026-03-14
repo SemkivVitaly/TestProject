@@ -1,4 +1,12 @@
-<!DOCTYPE html>
+/* Auto-generated from data/index.html - do not edit */
+#ifndef BRIDGE_UI_EMBED_H
+#define BRIDGE_UI_EMBED_H
+
+#ifndef PROGMEM
+#define PROGMEM
+#endif
+
+static const char BRIDGE_UI_HTML[] PROGMEM = R"BRIDGE_UI_RAW(<!DOCTYPE html>
 <html lang="ru" xml:lang="ru" xmlns="http://www.w3.org/1999/xhtml" xmlns="http://www.w3.org/1999/html">
 <head>
     <meta name="description" content="Настройки моста Bridge для ESP32">
@@ -354,3 +362,6 @@
 </body>
 </html>
 
+)BRIDGE_UI_RAW";
+
+#endif /* BRIDGE_UI_EMBED_H */

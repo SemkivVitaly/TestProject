@@ -10,6 +10,8 @@
 #include <Arduino.h>
 #include "config.h"
 #include "bridge.h"
+#include "bridge_log.h"
+#include "esp_log.h"
 
 extern HardwareSerial SerialUART;
 
@@ -25,6 +27,8 @@ static AsyncUDP udp;
 static IPAddress udpFromIP;
 static uint16_t udpFromPort = 0;
 static bool udpClientKnown = false;  /* Есть ли известный UDP-клиент (GCS отправил хотя бы один пакет). */
+static uint32_t lastUdpPacketMs = 0; /* Время последнего UDP-пакета для авто-отключения. */
+#define UDP_CLIENT_TIMEOUT_MS 30000  /* После этого времени без пакетов считаем клиента отключённым. */
 #endif
 
 #ifdef BLUETOOTH
@@ -54,9 +58,13 @@ void bridgeSetup(void) {
     if (udp.listen(SERIAL_UDP_PORT)) {
         udp.onPacket([](AsyncUDPPacket pkt) {
             if (pkt.length() > 0) {
+                bool wasUnknown = !udpClientKnown;
                 udpFromIP = pkt.remoteIP();
                 udpFromPort = pkt.remotePort();
                 udpClientKnown = true;
+                lastUdpPacketMs = millis();
+                if (wasUnknown)
+                    espLogPrintf("[bridge] UDP client set %s:%u", udpFromIP.toString().c_str(), (unsigned)udpFromPort);
                 bridgeBytesRxNetwork += pkt.length();
                 SerialUART.write(pkt.data(), pkt.length());
             }
@@ -65,6 +73,7 @@ void bridgeSetup(void) {
         debug.println(SERIAL_UDP_PORT);
     } else {
         debug.println(F("UDP listen failed"));
+        bridgeLogSetLastError("UDP listen failed");
     }
 #endif
 
@@ -91,6 +100,7 @@ void bridgeAcceptClient(void) {
             placed = true;
             debug.print(F("TCP client "));
             debug.println(c.remoteIP());
+            espLogPrintf("[bridge] TCP client set %s:%u", c.remoteIP().toString().c_str(), (unsigned)c.remotePort());
             break;
         }
     }
@@ -148,6 +158,28 @@ uint8_t bridgeGetUdpClientCount(void) {
 #endif
 }
 
+/** Очистка отключённых TCP-клиентов; сброс UDP-клиента по таймауту. */
+void bridgePollDisconnects(void) {
+#if defined(PROTOCOL_TCP)
+    for (byte i = 0; i < MAX_NMEA_CLIENTS; i++) {
+        if (tcpClients[i] && !tcpClients[i].connected()) {
+            String ip = tcpClients[i].remoteIP().toString();
+            tcpClients[i].stop();
+            tcpClients[i] = WiFiClient();
+            espLogPrintf("[bridge] TCP client disconnected %s", ip.c_str());
+        }
+    }
+#endif
+#if defined(PROTOCOL_UDP)
+    if (udpClientKnown && lastUdpPacketMs != 0 && (millis() - lastUdpPacketMs) > UDP_CLIENT_TIMEOUT_MS) {
+        espLogPrintf("[bridge] UDP client timeout %s:%u", udpFromIP.toString().c_str(), (unsigned)udpFromPort);
+        udpClientKnown = false;
+        udpFromPort = 0;
+        udpFromIP = IPAddress((uint32_t)0);
+    }
+#endif
+}
+
 #if defined(PROTOCOL_UDP)
 void bridgeClearUdpClient(void) {
     udpClientKnown = false;
@@ -158,15 +190,25 @@ void bridgeSetUdpClient(IPAddress ip, uint16_t port) {
     udpFromIP = ip;
     udpFromPort = port ? port : SERIAL_UDP_PORT;
     udpClientKnown = true;
+    lastUdpPacketMs = millis();
+    espLogPrintf("[bridge] UDP client set %s:%u", udpFromIP.toString().c_str(), (unsigned)udpFromPort);
+}
+
+bool bridgeGetUdpClientInfo(char* buf, size_t bufSize) {
+    if (!udpClientKnown || bufSize < 2) return false;
+    snprintf(buf, bufSize, "%s:%u", udpFromIP.toString().c_str(), (unsigned)udpFromPort);
+    return true;
 }
 #else
 void bridgeClearUdpClient(void) {}
 void bridgeSetUdpClient(IPAddress ip, uint16_t port) { (void)ip; (void)port; }
+bool bridgeGetUdpClientInfo(char* buf, size_t bufSize) { (void)buf; (void)bufSize; return false; }
 #endif
 
 /** Отправить данные (с UART от автопилота) во все активные каналы: TCP, UDP, при необходимости BT.
  *  flush() по TCP обеспечивает немедленную отправку телеметрии в GCS без задержки буфера. */
 void bridgeSendUartToNetwork(const uint8_t* data, uint16_t len) {
+    bridgeLogSetLastTx(data, len);
     bridgeBytesTxNetwork += len;
     bridgeBytesFromUart += len;
 #if defined(PROTOCOL_TCP)
