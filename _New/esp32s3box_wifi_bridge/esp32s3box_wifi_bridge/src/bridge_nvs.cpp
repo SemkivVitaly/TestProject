@@ -1,5 +1,12 @@
 /**
- * bridge_nvs.cpp — загрузка/сохранение настроек моста в NVS.
+ * bridge_nvs.cpp — загрузка и сохранение настроек моста в NVS (Non-Volatile Storage).
+ *
+ * NVS — это встроенная флеш-память ESP32 для ключ-значение; данные не пропадают при выключении.
+ * Используется класс Preferences (обёртка над NVS) с пространством имён "bridge" и ключом "cfg".
+ *
+ * ВЗАИМОДЕЙСТВИЕ:
+ *   — loadBridgeConfig() вызывается из main.cpp в setup(); читает в bridge_nvs_config.
+ *   — setBridgeConfigFromJson() вызывается из web_handlers при POST /api/settings; парсит JSON и вызывает saveBridgeConfig().
  */
 #include "config.h"
 #include "bridge_nvs.h"
@@ -7,10 +14,11 @@
 #include <Arduino.h>
 #include <string.h>
 
-#define NVS_NAMESPACE "bridge"
+#define NVS_NAMESPACE "bridge"  /* Имя раздела в NVS для наших настроек. */
 
-bridge_nvs_config_t bridge_nvs_config;
+bridge_nvs_config_t bridge_nvs_config;  /* Глобальная структура: сюда загружаем и отсюда сохраняем. */
 
+/** Заполняет bridge_nvs_config значениями по умолчанию из config.h (SSID, PASSWD, UART_BAUD и т.д.). */
 static void setDefaults(void) {
     bridge_nvs_config.wifi_mode = 1;
     strncpy(bridge_nvs_config.ssid, SSID, BRIDGE_NVS_SSID_LEN - 1);
@@ -28,10 +36,11 @@ static void setDefaults(void) {
     bridge_nvs_config.proto = 4;
 }
 
+/** Открывает NVS в режиме чтения, читает ключ "cfg" в bridge_nvs_config. Если размера не совпадают или открыть не удалось — остаются defaults из setDefaults(). */
 void loadBridgeConfig(void) {
     setDefaults();
     Preferences prefs;
-    if (!prefs.begin(NVS_NAMESPACE, true))
+    if (!prefs.begin(NVS_NAMESPACE, true))  /* true = только чтение. */
         return;
     if (prefs.getBytesLength("cfg") != sizeof(bridge_nvs_config_t)) {
         prefs.end();
@@ -45,6 +54,7 @@ void loadBridgeConfig(void) {
         bridge_nvs_config.wifi_mode = 1;
 }
 
+/** Записывает bridge_nvs_config в NVS под ключом "cfg". Вызывается после изменения настроек (в т.ч. из setBridgeConfigFromJson). */
 bool saveBridgeConfig(void) {
     Preferences prefs;
     if (!prefs.begin(NVS_NAMESPACE, false))
@@ -54,6 +64,7 @@ bool saveBridgeConfig(void) {
     return true;
 }
 
+/** Вспомогательная функция: из строки JSON извлечь значение строкового ключа key и записать в out (макс. outLen-1 символов). */
 static bool jsonGetString(const char* json, const char* key, char* out, size_t outLen) {
     char search[64];
     snprintf(search, sizeof(search), "\"%s\":\"", key);
@@ -69,6 +80,7 @@ static bool jsonGetString(const char* json, const char* key, char* out, size_t o
     return true;
 }
 
+/** Вспомогательная функция: из JSON извлечь целочисленное значение по ключу key. */
 static bool jsonGetInt(const char* json, const char* key, int* out) {
     char search[48];
     snprintf(search, sizeof(search), "\"%s\":", key);
@@ -79,6 +91,7 @@ static bool jsonGetInt(const char* json, const char* key, int* out) {
     return true;
 }
 
+/** Разбирает JSON (тело POST /api/settings), обновляет поля bridge_nvs_config (esp32_mode, ssid, wifi_pass, baud, gpio_tx/rx и т.д.) и сохраняет в NVS. Возвращает true при успешном saveBridgeConfig(). */
 bool setBridgeConfigFromJson(const char* json) {
     if (!json) return false;
     int v;

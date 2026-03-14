@@ -1,10 +1,14 @@
 /**
  * mavlink_state.cpp — разбор MAVLink и отправка команд по параметрам.
  *
- * Принимает байты с UART (от автопилота), парсит HEARTBEAT и PARAM_VALUE,
- * обновляет состояние (подключение, параметры SERVO). Отправка в UART
- * выполняется через extern SerialUART (PARAM_REQUEST_READ, PARAM_SET).
- * Счётчики пакетов и потерь используются веб-интерфейсом для метрик.
+ * ПОТОК ДАННЫХ:
+ *   Входящие байты приходят из main.cpp (прочитаны с SerialUART) → mavlinkProcessBytes().
+ *   Парсер mavlink_parse_char() собирает пакеты; при полном пакете обрабатываем msgid (HEARTBEAT, PARAM_VALUE).
+ *   Исходящие команды (PARAM_REQUEST_READ, PARAM_SET) пишутся в SerialUART из этого файла.
+ *
+ * ВЗАИМОДЕЙСТВИЕ:
+ *   — bridge_log: bridgeLogSetConnected() при установке/потере связи.
+ *   — esp_log: espLogPrintf() для событий в кольцевой лог ESP32.
  */
 #include <Arduino.h>
 #include <string.h>
@@ -14,9 +18,9 @@
 #include "bridge_log.h"
 #include "esp_log.h"
 
-extern HardwareSerial SerialUART;
+extern HardwareSerial SerialUART;  /* UART к автопилоту (объявлен в main.cpp). */
 
-/* Состояние подключения к автопилоту (по HEARTBEAT). */
+/* Состояние подключения к автопилоту: true после первого принятого HEARTBEAT. */
 bool mavlinkConnected = false;
 uint32_t lastHeartbeatMs = 0;
 uint8_t autopilotSysId = 1;
@@ -47,10 +51,11 @@ uint8_t mavlinkLogHead = 0;
 static uint32_t s_lastHeartbeatLogMs = 0;
 #define HEARTBEAT_LOG_INTERVAL_MS 10000
 
-/* Идентификаторы GCS в MAVLink (Mission Planner и др.). */
+/* System ID и Component ID, с которыми мы (GCS/мост) отправляем команды автопилоту. */
 static const uint8_t MAVLINK_GCS_SYSID = 255;
 static const uint8_t MAVLINK_GCS_COMPID = 190;
 
+/** Обнуляет кольцевой лог mavlinkLog[][]. Вызывается из main.cpp в setup() при WEB_SERVER. */
 void mavlinkInitLog(void) {
     memset(mavlinkLog, 0, sizeof(mavlinkLog));
 }
@@ -100,8 +105,10 @@ void mavlinkAddLog(const char* event) {
 }
 
 /**
- * Разобрать байты из UART: парсинг MAVLink, обновление состояния и счётчиков.
- * Вызывается из main loop() для каждого блока данных, прочитанных с SerialUART.
+ * Разбирает байты из UART (от автопилота): по одному байту передаём в mavlink_parse_char();
+ * при полном пакете обрабатываем HEARTBEAT (связь, lastHeartbeatMs) и PARAM_VALUE (SERVO*).
+ * Увеличиваем mavlinkPacketsRx и mavlinkRxByMsgid[msgid]; потери берём из status.packet_rx_drop_count.
+ * Вызывается из main.cpp в loop() для каждого блока, прочитанного с SerialUART.
  */
 void mavlinkProcessBytes(const uint8_t* data, uint16_t len) {
     mavlink_message_t msg;
@@ -153,7 +160,7 @@ void mavlinkProcessBytes(const uint8_t* data, uint16_t len) {
     mavlinkPacketDrops = (uint32_t)status.packet_rx_drop_count;
 }
 
-/** Проверить таймаут HEARTBEAT; при превышении сбросить mavlinkConnected. Вызывать в loop(). */
+/** Проверяет: если прошло больше MAVLINK_HEARTBEAT_TIMEOUT_MS с последнего HEARTBEAT — сбрасывает mavlinkConnected и пишет в лог. Вызывать в loop() при WEB_SERVER. */
 void mavlinkCheckDisconnect(void) {
     if (!mavlinkConnected)
         return;
@@ -165,7 +172,7 @@ void mavlinkCheckDisconnect(void) {
     mavlinkAddLog("DISCONNECT (no heartbeat)");
 }
 
-/** Сформировать и отправить PARAM_REQUEST_READ для одного параметра (в UART к автопилоту). */
+/** Формирует MAVLink-пакет PARAM_REQUEST_READ для param_id и пишет его в SerialUART. Вызывается из веб-обработчиков и mavlinkRequestServoParams(). */
 void mavlinkSendParamRequest(const char* param_id) {
     mavlink_message_t msg;
     uint8_t buf[MAVLINK_MAX_PACKET_LEN];
@@ -178,6 +185,7 @@ void mavlinkSendParamRequest(const char* param_id) {
         mavlinkTxByMsgid[msg.msgid]++;
 }
 
+/** Запрашивает у автопилота три параметра: SERVO1_REVERSED, SERVO3_TRIM, SERVO4_TRIM (три вызова mavlinkSendParamRequest). */
 void mavlinkRequestServoParams(void) {
     mavlinkSendParamRequest("SERVO1_REVERSED");
     mavlinkSendParamRequest("SERVO3_TRIM");
@@ -185,6 +193,7 @@ void mavlinkRequestServoParams(void) {
     mavlinkAddLog("TX PARAM_REQUEST_READ (SERVO1/3/4)");
 }
 
+/** Формирует PARAM_SET с param_id и value, отправляет в SerialUART. Используется со страницы /params при нажатии «Установить». */
 void mavlinkSendParamSet(const char* param_id, float value) {
     mavlink_message_t msg;
     uint8_t buf[MAVLINK_MAX_PACKET_LEN];
