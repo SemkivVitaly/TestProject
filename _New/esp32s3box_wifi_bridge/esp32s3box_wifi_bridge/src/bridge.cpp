@@ -1,11 +1,16 @@
 /**
- * bridge.cpp — мост «сеть ↔ UART».
+ * bridge.cpp — реализация моста «сеть (TCP/UDP/BT) ↔ UART».
  *
- * Назначение:
+ * НАЗНАЧЕНИЕ:
  *   Пересылка байтов между Wi‑Fi (TCP/UDP) или Bluetooth и последовательным
  *   портом к автопилоту. Mission Planner подключается по TCP (порт 8880)
- *   или UDP (14550); данные без изменений проходят в обе стороны. Счётчики
- *   байт используются веб-интерфейсом для метрик (отправлено/получено).
+ *   или UDP (14550); данные проходят без изменений в обе стороны. Счётчики
+ *   байт (bridgeBytesTxNetwork и др.) используются веб-интерфейсом для метрик.
+ *
+ * ВЗАИМОДЕЙСТВИЕ:
+ *   — Использует extern SerialUART из main.cpp для записи/чтения к автопилоту.
+ *   — При получении данных по UDP сразу пишет их в SerialUART в коллбеке onPacket.
+ *   — bridgeSendUartToNetwork() вызывается из main.cpp с буфером, заполненным из SerialUART.
  */
 #include <Arduino.h>
 #include "config.h"
@@ -13,22 +18,22 @@
 #include "bridge_log.h"
 #include "esp_log.h"
 
-extern HardwareSerial SerialUART;
+extern HardwareSerial SerialUART;  /* Объявлен в main.cpp — второй UART к автопилоту. */
 
 #if defined(PROTOCOL_TCP)
 #include <WiFiClient.h>
-static WiFiServer tcpServer(SERIAL_TCP_PORT);
-static WiFiClient tcpClients[MAX_NMEA_CLIENTS];
+static WiFiServer tcpServer(SERIAL_TCP_PORT);   /* Сервер слушает порт из config.h (8880). */
+static WiFiClient tcpClients[MAX_NMEA_CLIENTS]; /* Массив слотов для подключённых клиентов. */
 #endif
 
 #if defined(PROTOCOL_UDP)
 #include <AsyncUDP.h>
-static AsyncUDP udp;
-static IPAddress udpFromIP;
-static uint16_t udpFromPort = 0;
-static bool udpClientKnown = false;  /* Есть ли известный UDP-клиент (GCS отправил хотя бы один пакет). */
-static uint32_t lastUdpPacketMs = 0; /* Время последнего UDP-пакета для авто-отключения. */
-#define UDP_CLIENT_TIMEOUT_MS 30000  /* После этого времени без пакетов считаем клиента отключённым. */
+static AsyncUDP udp;                  /* Сокет для приёма/отправки UDP. */
+static IPAddress udpFromIP;           /* IP того, кто последним прислал UDP-пакет (считаем клиентом GCS). */
+static uint16_t udpFromPort = 0;      /* Порт UDP-клиента. */
+static bool udpClientKnown = false;   /* true после первого полученного пакета — мы знаем, куда слать ответ. */
+static uint32_t lastUdpPacketMs = 0; /* Время последнего пакета для таймаута отключения. */
+#define UDP_CLIENT_TIMEOUT_MS 30000   /* Если столько мс нет пакетов — считаем клиента отключённым. */
 #endif
 
 #ifdef BLUETOOTH
@@ -38,14 +43,15 @@ static uint8_t bufBT[BUFFERSIZE];
 static uint16_t lenBT = 0;
 #endif
 
-static uint8_t bufToUART[BUFFERSIZE];
+static uint8_t bufToUART[BUFFERSIZE];  /* Буфер для накопления данных из TCP перед записью в UART. */
 static uint16_t lenToUART = 0;
 
-/* Счётчики для веб-интерфейса (метрики канала). */
-uint32_t bridgeBytesTxNetwork = 0;  /* Всего байт отправлено в сеть (TCP/UDP/BT). */
-uint32_t bridgeBytesRxNetwork = 0;  /* Всего байт принято из сети и записано в UART. */
-uint32_t bridgeBytesFromUart = 0;   /* Всего байт принято с UART (от автопилота). */
+/* Глобальные счётчики: увеличиваются при каждой пересылке; читаются в web_handlers для /api/status, /api/link. */
+uint32_t bridgeBytesTxNetwork = 0;
+uint32_t bridgeBytesRxNetwork = 0;
+uint32_t bridgeBytesFromUart = 0;
 
+/** Инициализация: запуск TCP-сервера, привязка UDP-порта и коллбека на приём пакетов, при BLUETOOTH — старт BT. */
 void bridgeSetup(void) {
 #if defined(PROTOCOL_TCP)
     tcpServer.begin();
@@ -83,7 +89,7 @@ void bridgeSetup(void) {
 #endif
 }
 
-/** Принять нового TCP-клиента (например Mission Planner), если слот свободен. */
+/** Проверяет, есть ли новое подключение к TCP-серверу; если есть свободный слот в tcpClients[] — принимает клиента (например Mission Planner). */
 void bridgeAcceptClient(void) {
 #if defined(PROTOCOL_TCP)
     if (!tcpServer.hasClient())
@@ -109,7 +115,7 @@ void bridgeAcceptClient(void) {
 #endif
 }
 
-/** Читать данные из TCP (и при необходимости BT) и записать в UART к автопилоту. */
+/** Читает накопленные байты из каждого подключённого TCP-клиента (и из BT), добавляет к bridgeBytesRxNetwork и пишет в SerialUART. */
 void bridgePollNetworkToUart(void) {
 #if defined(PROTOCOL_TCP)
     for (byte i = 0; i < MAX_NMEA_CLIENTS; i++) {
@@ -158,7 +164,7 @@ uint8_t bridgeGetUdpClientCount(void) {
 #endif
 }
 
-/** Очистка отключённых TCP-клиентов; сброс UDP-клиента по таймауту. */
+/** Удаляет из слотов отключённых TCP-клиентов; если от UDP-клиента давно не было пакетов (UDP_CLIENT_TIMEOUT_MS) — сбрасывает udpClientKnown. */
 void bridgePollDisconnects(void) {
 #if defined(PROTOCOL_TCP)
     for (byte i = 0; i < MAX_NMEA_CLIENTS; i++) {
@@ -205,8 +211,7 @@ void bridgeSetUdpClient(IPAddress ip, uint16_t port) { (void)ip; (void)port; }
 bool bridgeGetUdpClientInfo(char* buf, size_t bufSize) { (void)buf; (void)bufSize; return false; }
 #endif
 
-/** Отправить данные (с UART от автопилота) во все активные каналы: TCP, UDP, при необходимости BT.
- *  flush() по TCP обеспечивает немедленную отправку телеметрии в GCS без задержки буфера. */
+/** Отправляет байты data длиной len во все активные каналы: каждому подключённому TCP-клиенту, известному UDP-клиенту (или broadcast на 14550), при BT — в Bluetooth. Увеличивает bridgeBytesTxNetwork и bridgeBytesFromUart. flush() по TCP — чтобы телеметрия сразу ушла в GCS. */
 void bridgeSendUartToNetwork(const uint8_t* data, uint16_t len) {
     bridgeLogSetLastTx(data, len);
     bridgeBytesTxNetwork += len;

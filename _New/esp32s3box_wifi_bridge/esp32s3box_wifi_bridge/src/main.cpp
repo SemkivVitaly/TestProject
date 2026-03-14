@@ -30,20 +30,23 @@
 #include "web_handlers.h"
 #endif
 
-/** Второй UART (пины в config.h): обмен с автопилотом по MAVLink. */
+/**
+ * Второй последовательный порт (UART1). Serial — это UART0 (USB/консоль).
+ * Пины задаются в setup() из NVS или config.h. По этому порту идёт обмен с автопилотом (MAVLink).
+ */
 HardwareSerial SerialUART(1);
 
 #ifdef WEB_SERVER
-WebServer webServer(WEB_SERVER_PORT);
+WebServer webServer(WEB_SERVER_PORT);  /* HTTP-сервер на порту из config.h. */
 Servo servo;
 bool servoAttached = false;
 #endif
 
-/** Буфер данных, пришедших с UART от автопилота. */
+/** Буфер для данных с UART от автопилота. Заполняется в loop(), передаётся в mavlinkProcessBytes() и bridgeSendUartToNetwork(). */
 static uint8_t bufFromUART[BUFFERSIZE];
 static uint16_t lenFromUART = 0;
 
-/** При обрыве Wi‑Fi в режиме STA — переподключение (используются сохранённые SSID/пароль). */
+/** Обработчик «Wi‑Fi отключился» в режиме STA: переподключаемся через WiFi.begin() с SSID/паролем из bridge_nvs_config. */
 static void onWiFiDisconnected(WiFiEvent_t, WiFiEventInfo_t) {
     espLogPrintf("[WiFi] STA disconnected, reconnecting...");
     debug.println(F("WiFi disconnected, reconnecting..."));
@@ -57,17 +60,22 @@ static void onWiFiDisconnected(WiFiEvent_t, WiFiEventInfo_t) {
     espLogPrintf("[WiFi] STA reconnected IP %s", WiFi.localIP().toString().c_str());
 }
 
+/**
+ * setup() — выполняется один раз при включении платы.
+ * Порядок: Serial, загрузка конфига из NVS, инициализация UART к автопилоту,
+ * выбор режима Wi‑Fi (AP или STA), запуск моста, при WEB_SERVER — LittleFS и веб-сервер.
+ */
 void setup() {
     delay(500);
-    Serial.begin(115200);
+    Serial.begin(115200);  /* Скорость консоли для отладки (Monitor в PlatformIO). */
     debug.print(F("\nWiFi bridge "));
     debug.println(VERSION);
     espLogPrintf("[boot] WiFi bridge %s", VERSION);
 
-    /* Загрузить настройки из NVS (или подставить defaults из config.h). Режим и Wi‑Fi задаются из веб-интерфейса. */
+    /* Загрузить настройки из NVS в глобальную структуру bridge_nvs_config (WiFi, UART, hostname и т.д.). Если NVS пустой — используются значения по умолчанию из bridge_nvs (из config.h). */
     loadBridgeConfig();
 
-    /* UART к автопилоту: скорость и пины из NVS (если заданы) или из config.h. */
+    /* UART к автопилоту: скорость и пины берём из NVS (если там заданы), иначе из config.h. */
     uint32_t baud = (bridge_nvs_config.baud > 0) ? bridge_nvs_config.baud : (uint32_t)UART_BAUD;
     int8_t rxPin = (bridge_nvs_config.gpio_rx >= 0) ? bridge_nvs_config.gpio_rx : (int8_t)SERIAL_RXPIN;
     int8_t txPin = (bridge_nvs_config.gpio_tx >= 0) ? bridge_nvs_config.gpio_tx : (int8_t)SERIAL_TXPIN;
@@ -76,10 +84,10 @@ void setup() {
 #ifdef WEB_SERVER
     pinMode(LED_PIN, OUTPUT);
     pinMode(BTN_PIN, INPUT_PULLUP);
-    mavlinkInitLog();
+    mavlinkInitLog();  /* Обнулить кольцевой лог событий MAVLink. */
 #endif
 
-    /* Режим Wi‑Fi из сохранённой конфигурации (1 = AP, 2 = STA). */
+    /* Режим Wi‑Fi из сохранённой конфигурации: 1 = точка доступа (AP), 2 = клиент (STA). */
     if (bridge_nvs_config.wifi_mode == 2) {
         WiFi.mode(WIFI_STA);
         WiFi.onEvent(onWiFiDisconnected, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
@@ -118,13 +126,13 @@ void setup() {
     ArduinoOTA.begin();
 #endif
 
-    /* Запуск TCP/UDP (и при необходимости BT); приём клиентов в loop. */
+    /* Запуск TCP-сервера (порт 8880), UDP (14550) и при BLUETOOTH — BT. Клиенты принимаются в loop() через bridgeAcceptClient(). */
     bridgeSetup();
 
 #ifdef WEB_SERVER
-    /* Файловая система для страницы Bridge UI (/bridge). Веб доступен только по локальной сети (Wi‑Fi платы). */
+    /* LittleFS нужна для раздачи страницы /bridge из файла, если не встроена в прошивку (embed). Веб доступен только по Wi‑Fi платы. */
     LittleFS.begin(true);
-    webSetup(webServer);
+    webSetup(webServer);  /* Регистрирует все маршруты: /, /params, /api/* и т.д. */
     debug.println(F("Web (local): http://192.168.2.1"));
 #endif
 
@@ -133,14 +141,18 @@ void setup() {
 #endif
 }
 
+/**
+ * loop() — вызывается бесконечно после setup().
+ * Порядок важен: сначала обрабатываем веб-клиентов и OTA, затем мост (принять клиента, отключения, сеть→UART), затем чтение UART и пересылка в сеть.
+ */
 void loop() {
 #ifdef OTA_HANDLER
-    ArduinoOTA.handle();
+    ArduinoOTA.handle();  /* Проверка входящего OTA-обновления по Wi‑Fi. */
 #endif
 
 #ifdef WEB_SERVER
-    webServer.handleClient();
-    mavlinkCheckDisconnect();
+    webServer.handleClient();   /* Обработать один HTTP-запрос (главная, /api/status и т.д.). */
+    mavlinkCheckDisconnect();   /* Если давно не было HEARTBEAT — сбросить mavlinkConnected. */
     if (digitalRead(BTN_PIN) == LOW) {
         static uint32_t lastBtn = 0;
         if (millis() - lastBtn > 300) {
@@ -150,23 +162,24 @@ void loop() {
     }
 #endif
 
-    /* Принять нового TCP-клиента; очистить отключённых TCP/UDP. */
+    /* Принять нового TCP-клиента (Mission Planner и т.п.), если есть свободный слот. */
     bridgeAcceptClient();
+    /* Удалить отключённых TCP-клиентов и сбросить UDP-клиента по таймауту. */
     bridgePollDisconnects();
-    /* Данные из Wi‑Fi (TCP/BT) → в UART к автопилоту. */
+    /* Прочитать данные из TCP (и BT) и записать их в SerialUART к автопилоту. */
     bridgePollNetworkToUart();
 
-    /* Данные с автопилота по UART: парсим MAVLink и пересылаем в сеть. Читаем всё доступное (порциями), чтобы телеметрия не задерживалась. */
+    /* Читаем всё, что пришло с автопилота по UART. Каждый блок: сохраняем в лог, парсим MAVLink (статус, параметры), пересылаем в сеть (TCP/UDP). */
     while (SerialUART.available()) {
         lenFromUART = 0;
         while (SerialUART.available() && lenFromUART < BUFFERSIZE - 1)
             bufFromUART[lenFromUART++] = SerialUART.read();
 
         if (lenFromUART == 0) break;
-        bridgeLogSetLastRx(bufFromUART, lenFromUART);
-        mavlinkProcessBytes(bufFromUART, lenFromUART);
-        bridgeSendUartToNetwork(bufFromUART, lenFromUART);
+        bridgeLogSetLastRx(bufFromUART, lenFromUART);       /* Для единого лога (образец RX). */
+        mavlinkProcessBytes(bufFromUART, lenFromUART);      /* Разбор HEARTBEAT, PARAM_VALUE и т.д. */
+        bridgeSendUartToNetwork(bufFromUART, lenFromUART);  /* Отправить те же байты всем TCP/UDP клиентам. */
     }
 
-    delay(1);
+    delay(1);  /* Небольшая пауза, чтобы не нагружать CPU на 100%. */
 }

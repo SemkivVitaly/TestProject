@@ -1,5 +1,9 @@
 /**
- * bridge_log.cpp — единый лог: ID, подключение, статистика, WiFi dBm, 1 RX и 1 TX пакет.
+ * bridge_log.cpp — формирование единого текстового лога для скачивания (/api/log/file).
+ *
+ * Хранит: уникальный ID (MAC), флаг подключения MAVLink, счётчики пакетов, RSSI,
+ * образцы последнего RX/TX (hex), последние записи из mavlinkLog и espLog.
+ * bridgeLogGetText() собирает всё в один буфер для ответа HTTP.
  */
 #include "bridge_log.h"
 #include "esp_log.h"
@@ -10,11 +14,11 @@
 #include <stdio.h>
 #include <string.h>
 
-#define SAMPLE_MAX 64
+#define SAMPLE_MAX 64          /* Макс. байт в образце RX/TX. */
 #define HEX_LINE 16
 #define LAST_ERROR_LEN 64
 #define LAST_UART_ERROR_LEN 32
-#define MAVLINK_LOG_TAIL 20
+#define MAVLINK_LOG_TAIL 20    /* Сколько последних записей MAVLink выводить в лог. */
 
 static char s_uniqueId[24];
 static bool s_connected = false;
@@ -27,6 +31,7 @@ static bool s_idDone = false;
 static char s_lastError[LAST_ERROR_LEN] = "";
 static char s_lastUartError[LAST_UART_ERROR_LEN] = "none";
 
+/** Формирует уникальный ID из MAC один раз и кэширует в s_uniqueId. */
 static void ensureUniqueId(void) {
     if (s_idDone) return;
     s_idDone = true;
@@ -86,6 +91,7 @@ void bridgeLogSetLastUartError(const char* err) {
     s_lastUartError[LAST_UART_ERROR_LEN - 1] = '\0';
 }
 
+/** Дописывает в buf одну строку hex-дампа data (до len байт). */
 static void appendHexLine(char* buf, size_t* pos, size_t maxLen, const uint8_t* data, uint16_t len) {
     for (uint16_t i = 0; i < len && *pos + 4 < maxLen; i++)
         *pos += (size_t)snprintf(buf + *pos, maxLen - *pos, "%02X ", data[i]);
@@ -95,6 +101,7 @@ static void appendHexLine(char* buf, size_t* pos, size_t maxLen, const uint8_t* 
     buf[*pos] = '\0';
 }
 
+/** Собирает полный текст единого лога в buf (ID, подключение, статистика, RSSI, счётчики по типам MAVLink, образцы RX/TX, хвост mavlinkLog, события ESP32). Возвращает длину. */
 size_t bridgeLogGetText(char* buf, size_t bufSize) {
     if (!buf || bufSize < 64) return 0;
     ensureUniqueId();

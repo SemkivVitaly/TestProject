@@ -1,13 +1,19 @@
 /**
  * web_handlers.cpp — HTTP-обработчики и маршруты веб-сервера.
  *
- * Веб-интерфейс работает только локально:
- *   — Подключитесь к Wi‑Fi точки доступа ESP32 (SSID/PASS из config.h).
- *   — В браузере откройте http://192.168.2.1 (в режиме AP) или http://<IP платы>.
- *   — Доступ к страницам и API только из локальной сети платы, интернет не нужен.
+ * Веб-интерфейс работает только локально по Wi‑Fi платы (http://192.168.2.1 в AP или IP платы в STA).
  *
- * Маршруты: / (главная с метриками), /params (SERVO), /bridge (Bridge UI из LittleFS),
- * /api/status, /api/link, /api/log, /api/params, /api/param_request, /api/system/* для Bridge.
+ * МАРШРУТЫ И КТО ИХ ВЫЗЫВАЕТ:
+ *   — Браузер пользователя запрашивает URL → WebServer вызывает зарегистрированный обработчик.
+ *   — / → handleRoot() — главная с ссылками на лог, параметры, Bridge UI.
+ *   — /params → handleParamsPage() — страница параметров SERVO (запрос с автопилота, форма установки).
+ *   — /bridge → handleBridgePage() — раздача Bridge UI (из PROGMEM или LittleFS).
+ *   — /api/status → handleApiStatus() — JSON: uptime, connected, packets, bytes, параметры SERVO, лог.
+ *   — /api/link → handleApiLink() — JSON по каналу (packets, drops, latency, bytes).
+ *   — /api/params GET/POST → handleParamsGet/handleParamsSet — чтение/установка параметров SERVO.
+ *   — /api/param_request → handleParamRequest() — отправить запрос параметров на автопилот.
+ *   — /api/settings GET/POST → настройки Wi‑Fi/UART; POST вызывает setBridgeConfigFromJson() и перезагрузку.
+ *   — /api/settings/clients/udp (POST), clear_udp (DELETE) — задать/сбросить UDP-клиента.
  */
 #include "config.h"
 #ifdef WEB_SERVER
@@ -26,7 +32,7 @@
 #include "esp_log.h"
 #include "web_handlers.h"
 
-static WebServer* s_server = nullptr;
+static WebServer* s_server = nullptr;  /* Указатель на сервер, переданный в webSetup(); используется в sendJson/sendHtml. */
 
 static void sendJson(const String& s) {
     if (s_server) s_server->send(200, F("application/json"), s);
@@ -346,6 +352,7 @@ static void handleApiLogEsp32() {
     if (s_server) s_server->send(200, F("text/plain; charset=utf-8"), buf);
 }
 
+/** Регистрирует все маршруты на server и вызывает server.begin(). Вызывается из main.cpp setup() один раз. */
 void webSetup(WebServer& server) {
     s_server = &server;
     server.on(F("/"), handleRoot);

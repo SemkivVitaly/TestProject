@@ -1,5 +1,6 @@
 /**
- * esp_log.cpp — кольцевой буфер логов ESP32.
+ * esp_log.cpp — кольцевой буфер логов: каждая запись — строка с префиксом [uptime_sec].
+ * При добавлении новой записи, если буфер полон, запись идёт поверх старых данных (кольцо).
  */
 #include "esp_log.h"
 #include <Arduino.h>
@@ -12,10 +13,10 @@ extern "C" {
 #endif
 
 static char s_logBuf[ESP_LOG_SIZE];
-static size_t s_logHead = 0;  /* куда писать следующую запись */
-static size_t s_logUsed = 0; /* сколько байт занято */
+static size_t s_logHead = 0;   /* Индекс следующего байта для записи (кольцо). */
+static size_t s_logUsed = 0;   /* Текущее количество байт в буфере (до ESP_LOG_SIZE). */
 
-/** Записать строку с префиксом [uptime_sec]. */
+/** Добавляет строку line с префиксом [millis/1000] в кольцевой буфер; обрезает по ESP_LOG_ENTRY. */
 void espLogPrint(const char* line) {
     if (!line) return;
     unsigned long uptime = millis() / 1000;
@@ -40,6 +41,7 @@ void espLogPrint(const char* line) {
     if (s_logUsed < ESP_LOG_SIZE) s_logUsed++;
 }
 
+/** Форматирует строку по fmt и аргументам (как printf) и добавляет её через espLogPrint. */
 void espLogPrintf(const char* fmt, ...) {
     char line[ESP_LOG_ENTRY];
     va_list ap;
@@ -49,6 +51,7 @@ void espLogPrintf(const char* fmt, ...) {
     if (n > 0) espLogPrint(line);
 }
 
+/** Копирует содержимое кольцевого буфера в buf (макс. bufSize-1 байт), добавляет '\0'. Возвращает длину без '\0'. */
 size_t espLogGetText(char* buf, size_t bufSize) {
     if (!buf || bufSize == 0) return 0;
     if (s_logUsed == 0) {
