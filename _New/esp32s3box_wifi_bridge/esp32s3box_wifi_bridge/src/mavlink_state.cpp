@@ -85,9 +85,10 @@ const char* mavlinkGetMsgName(uint8_t msgid) {
 
 /** Сформировать строку со счётчиками по типам для единого лога. */
 void mavlinkGetCountersString(char* buf, size_t bufSize) {
-    if (!buf || bufSize < 32) return;
+    if (!buf || bufSize < 2) return;
+    buf[0] = '\0';
     size_t pos = 0;
-    for (int i = 0; i < 256 && pos < bufSize - 32; i++) {
+    for (int i = 0; i < 256 && pos + 32 < bufSize; i++) {
         if (mavlinkRxByMsgid[i] == 0 && mavlinkTxByMsgid[i] == 0) continue;
         const char* name = mavlinkGetMsgName((uint8_t)i);
         int n = snprintf(buf + pos, bufSize - pos, "%s RX=%lu TX=%lu; ",
@@ -121,12 +122,14 @@ void mavlinkProcessBytes(const uint8_t* data, uint16_t len) {
             mavlinkRxByMsgid[msg.msgid]++;
         switch (msg.msgid) {
             case MAVLINK_MSG_ID_HEARTBEAT: {
+                bool wasDisconnected = !mavlinkConnected;
                 mavlinkConnected = true;
                 lastHeartbeatMs = millis();
                 autopilotSysId = msg.sysid;
                 autopilotCompId = msg.compid;
                 bridgeLogSetConnected(true);
-                espLogPrintf("[MAVLink] connected (HEARTBEAT)");
+                if (wasDisconnected)
+                    espLogPrintf("[MAVLink] connected sysid=%u", (unsigned)msg.sysid);
                 if (millis() - s_lastHeartbeatLogMs >= HEARTBEAT_LOG_INTERVAL_MS) {
                     mavlinkAddLog("RX HEARTBEAT");
                     s_lastHeartbeatLogMs = millis();

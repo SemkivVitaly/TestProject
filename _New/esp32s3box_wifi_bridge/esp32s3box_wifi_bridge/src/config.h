@@ -98,9 +98,8 @@
 #ifdef DEBUG
     #define debug Serial
 #else
-    /* Иначе debug — пустой объект: вывод отключён, код не ломается. */
-    class Debug : public Print { size_t write(uint8_t) override { return 0; } };
-    Debug debug;
+    class DebugNull : public Print { public: size_t write(uint8_t) override { return 0; } };
+    static DebugNull debug;
 #endif
 
 #endif
