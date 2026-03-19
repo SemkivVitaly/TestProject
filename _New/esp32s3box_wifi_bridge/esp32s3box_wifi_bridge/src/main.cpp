@@ -23,6 +23,9 @@
 #ifdef OTA_HANDLER
 #include <ArduinoOTA.h>
 #endif
+#ifdef BATTERY_SAVER
+#include <esp_wifi.h>
+#endif
 #ifdef WEB_SERVER
 #include <ESP32Servo.h>
 #include <WebServer.h>
@@ -46,16 +49,19 @@ bool servoAttached = false;
 static uint8_t bufFromUART[BUFFERSIZE];
 static uint16_t lenFromUART = 0;
 
-/** Обработчик «Wi‑Fi отключился» в режиме STA: переподключаемся через WiFi.begin() с SSID/паролем из bridge_nvs_config. */
+static volatile bool s_staReconnecting = false;
+
 static void onWiFiDisconnected(WiFiEvent_t, WiFiEventInfo_t) {
-    espLogPrintf("[WiFi] STA disconnected, reconnecting...");
+    if (s_staReconnecting) return;
+    s_staReconnecting = true;
+    espLogPrintf("[WiFi] STA disconnected, will reconnect...");
     debug.println(F("WiFi disconnected, reconnecting..."));
     WiFi.begin(bridge_nvs_config.ssid, bridge_nvs_config.wifi_pass);
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        debug.print(F("."));
-    }
-    debug.print(F("\nConnected, IP: "));
+}
+
+static void onWiFiGotIP(WiFiEvent_t, WiFiEventInfo_t) {
+    s_staReconnecting = false;
+    debug.print(F("Connected, IP: "));
     debug.println(WiFi.localIP());
     espLogPrintf("[WiFi] STA reconnected IP %s", WiFi.localIP().toString().c_str());
 }
@@ -91,14 +97,23 @@ void setup() {
     if (bridge_nvs_config.wifi_mode == 2) {
         WiFi.mode(WIFI_STA);
         WiFi.onEvent(onWiFiDisconnected, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
+        WiFi.onEvent(onWiFiGotIP, ARDUINO_EVENT_WIFI_STA_GOT_IP);
         WiFi.begin(bridge_nvs_config.ssid, bridge_nvs_config.wifi_pass);
-        while (WiFi.status() != WL_CONNECTED) {
-            delay(500);
-            debug.print(F("."));
+        {
+            uint32_t t0 = millis();
+            while (WiFi.status() != WL_CONNECTED && millis() - t0 < 15000) {
+                delay(250);
+                debug.print(F("."));
+            }
         }
-        debug.println();
-        debug.println(WiFi.localIP());
-        espLogPrintf("[WiFi] STA connected IP %s", WiFi.localIP().toString().c_str());
+        if (WiFi.status() == WL_CONNECTED) {
+            debug.println();
+            debug.println(WiFi.localIP());
+            espLogPrintf("[WiFi] STA connected IP %s", WiFi.localIP().toString().c_str());
+        } else {
+            debug.println(F("\nSTA: initial connect timeout, will retry in background"));
+            espLogPrintf("[WiFi] STA initial connect timeout");
+        }
         if (MDNS.begin(bridge_nvs_config.hostname)) {
             MDNS.addService("_telnet", "_tcp", SERIAL0_TCP_PORT);
             debug.print(F("mDNS: ")); debug.println(bridge_nvs_config.hostname);

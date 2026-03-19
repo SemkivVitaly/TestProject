@@ -72,6 +72,7 @@ void bridgeSetup(void) {
                 if (wasUnknown)
                     espLogPrintf("[bridge] UDP client set %s:%u", udpFromIP.toString().c_str(), (unsigned)udpFromPort);
                 bridgeBytesRxNetwork += pkt.length();
+                bridgeLogSetLastTx(pkt.data(), pkt.length());
                 SerialUART.write(pkt.data(), pkt.length());
             }
         });
@@ -126,6 +127,7 @@ void bridgePollNetworkToUart(void) {
             bufToUART[lenToUART++] = tcpClients[i].read();
         if (lenToUART > 0) {
             bridgeBytesRxNetwork += lenToUART;
+            bridgeLogSetLastTx(bufToUART, lenToUART);
             SerialUART.write(bufToUART, lenToUART);
         }
     }
@@ -138,6 +140,7 @@ void bridgePollNetworkToUart(void) {
             bufBT[lenBT++] = SerialBT.read();
         if (lenBT > 0) {
             bridgeBytesRxNetwork += lenBT;
+            bridgeLogSetLastTx(bufBT, lenBT);
             SerialUART.write(bufBT, lenBT);
         }
     }
@@ -213,7 +216,6 @@ bool bridgeGetUdpClientInfo(char* buf, size_t bufSize) { (void)buf; (void)bufSiz
 
 /** Отправляет байты data длиной len во все активные каналы: каждому подключённому TCP-клиенту, известному UDP-клиенту (или broadcast на 14550), при BT — в Bluetooth. Увеличивает bridgeBytesTxNetwork и bridgeBytesFromUart. flush() по TCP — чтобы телеметрия сразу ушла в GCS. */
 void bridgeSendUartToNetwork(const uint8_t* data, uint16_t len) {
-    bridgeLogSetLastTx(data, len);
     bridgeBytesTxNetwork += len;
     bridgeBytesFromUart += len;
 #if defined(PROTOCOL_TCP)

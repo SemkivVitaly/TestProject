@@ -45,14 +45,27 @@ static void sendHtml(const String& html) {
 /** Главная страница: единый лог, лог пакетов, лог ESP32, управление SERVO, Bridge UI. */
 static void handleRoot() {
     sendHtml(F(
-        "<!DOCTYPE html><html><head><meta charset='utf-8'><title>ESP32-S3-Box</title>"
-        "<style>body{font-family:sans-serif;margin:1.5rem;} a{color:#1eaedb;} a:hover{color:#0fa0ce;}</style></head><body>"
-        "<h1>ESP32-S3-Box Bridge</h1>"
-        "<p><a href='/api/log/file'>Единый лог</a></p>"
-        "<p><a href='/api/log'>Лог пакетов</a></p>"
-        "<p><a href='/api/log/esp32'>Лог ESP32</a></p>"
-        "<p><a href='/params'>Управление SERVO</a></p>"
-        "<p><a href='/bridge'>Bridge UI</a></p>"
+        "<!DOCTYPE html><html><head><meta charset='utf-8'><title>ESP32-S3-Box Bridge</title>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<style>"
+        "body{font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;margin:0;padding:0;background:linear-gradient(135deg,#001f3f 0%,#0074d9 100%);color:#fff;display:flex;justify-content:center;align-items:center;min-height:100vh;}"
+        ".container{background:rgba(0,0,0,0.4);padding:2.5rem;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.5);text-align:center;max-width:400px;width:90%;backdrop-filter:blur(10px);}"
+        "h1{margin-top:0;font-size:2.2rem;font-weight:300;margin-bottom:2rem;letter-spacing:1px;}"
+        "a{display:block;background:#33c3f0;color:#fff;text-decoration:none;padding:14px 20px;margin:12px 0;border-radius:8px;font-weight:600;font-size:1.1rem;transition:all 0.3s ease;box-shadow:0 4px 6px rgba(0,0,0,0.2);}"
+        "a:hover{background:#1eaedb;transform:translateY(-2px);box-shadow:0 6px 12px rgba(0,0,0,0.3);}"
+        ".log-links{display:flex;gap:10px;margin-top:12px;} .log-links a{flex:1;margin:0;font-size:0.95rem;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);}"
+        ".log-links a:hover{background:rgba(255,255,255,0.2);}"
+        "</style></head><body>"
+        "<div class='container'>"
+        "<h1>ESP32-S3 Bridge</h1>"
+        "<a href='/bridge' style='background:#ff9734;'>Настройки Bridge UI</a>"
+        "<a href='/params'>Управление SERVO</a>"
+        "<div class='log-links'>"
+        "<a href='/api/log/file'>Единый лог</a>"
+        "<a href='/api/log'>JSON Пакеты</a>"
+        "<a href='/api/log/esp32'>Лог ESP32</a>"
+        "</div>"
+        "</div>"
         "</body></html>"
     ));
 }
@@ -75,6 +88,7 @@ static void handleApiStatus() {
     char lastErr[64];
     bridgeLogGetLastError(lastErr, sizeof(lastErr));
     String s;
+    s.reserve(512 + MAVLINK_LOG_SIZE * (MAVLINK_LOG_ENTRY_LEN + 4));
     s += F("{\"uptime\":"); s += (millis() / 1000);
     s += F(",\"free_heap\":"); s += ESP.getFreeHeap();
     s += F(",\"connected\":"); s += mavlinkConnected ? F("true") : F("false");
@@ -111,26 +125,47 @@ static void handleApiStatus() {
 static void handleParamsPage() {
     String html = F(
         "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Параметры SERVO</title>"
-        "<style>body{font-family:sans-serif;margin:1rem;} table{border-collapse:collapse;} th,td{border:1px solid #ccc;padding:6px;} .ok{color:green;} .no{color:red;}</style>"
-        "</head><body><h1>Параметры MAVLink (SERVO)</h1>"
-        "<p id='conn'></p>"
-        "<p><button type='button' onclick=\"window.paramsFrozen=false; var x=new XMLHttpRequest();x.open('GET','/api/param_request');x.send();setTimeout(load,500);\">Запросить с автопилота</button></p>"
-        "<form method='post' action='/api/params'>"
-        "<table><tr><th>Параметр</th><th>Значение</th><th>Получен</th></tr>"
-        "<tr><td>SERVO1_REVERSED</td><td><input name='SERVO1_REVERSED' id='v1' type='number' step='0.01'></td><td id='k1'>—</td></tr>"
-        "<tr><td>SERVO3_TRIM</td><td><input name='SERVO3_TRIM' id='v2' type='number' step='0.01'></td><td id='k2'>—</td></tr>"
-        "<tr><td>SERVO4_TRIM</td><td><input name='SERVO4_TRIM' id='v3' type='number' step='0.01'></td><td id='k3'>—</td></tr>"
-        "</table><button type='submit'>Установить</button></form>"
-        "<p><a href='/'>Назад</a> | <a href='/api/status'>Статус JSON</a> | <a href='/api/log'>Лог</a></p>"
+        "<meta name='viewport' content='width=device-width, initial-scale=1'>"
+        "<style>"
+        "body{font-family:'Segoe UI',Roboto,sans-serif;margin:0;padding:20px;background:linear-gradient(135deg,#001f3f 0%,#0074d9 100%);color:#fff;display:flex;justify-content:center;align-items:center;min-height:100vh;box-sizing:border-box;}"
+        ".container{background:rgba(0,0,0,0.4);padding:2.5rem;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.5);max-width:500px;width:100%;backdrop-filter:blur(10px);}"
+        "h1{margin-top:0;font-size:1.8rem;font-weight:300;text-align:center;margin-bottom:1.5rem;}"
+        "#conn{text-align:center;margin-bottom:1.5rem;background:rgba(0,0,0,0.3);padding:12px;border-radius:8px;font-size:0.95rem;border:1px solid rgba(255,255,255,0.1);}"
+        "table{width:100%;border-collapse:collapse;margin-bottom:1.5rem;background:rgba(255,255,255,0.05);border-radius:8px;overflow:hidden;}"
+        "th,td{padding:12px 15px;text-align:left;border-bottom:1px solid rgba(255,255,255,0.1);}"
+        "th{background:rgba(0,0,0,0.3);font-weight:600;font-size:0.9rem;text-transform:uppercase;letter-spacing:1px;}"
+        "input[type=number]{width:100%;padding:10px;border:1px solid rgba(255,255,255,0.2);border-radius:6px;background:rgba(255,255,255,0.9);color:#000;box-sizing:border-box;font-family:inherit;font-size:1rem;transition:border 0.3s;}"
+        "input[type=number]:focus{outline:none;border-color:#ff9734;}"
+        "button{background:#ff9734;color:#fff;border:none;padding:14px 20px;border-radius:8px;cursor:pointer;font-weight:600;font-size:1rem;width:100%;transition:all 0.3s ease;box-shadow:0 4px 6px rgba(0,0,0,0.2);margin-bottom:12px;}"
+        "button:hover{background:#e6862b;transform:translateY(-2px);box-shadow:0 6px 12px rgba(0,0,0,0.3);}"
+        "button.secondary{background:transparent;border:2px solid #ff9734;color:#ff9734;box-shadow:none;}"
+        "button.secondary:hover{background:rgba(255,151,52,0.1);}"
+        ".ok{color:#68b838;font-weight:bold;} .no{color:#f63e3e;font-weight:bold;}"
+        ".nav{display:flex;justify-content:center;gap:15px;margin-top:1rem;}"
+        ".nav a{color:#33c3f0;text-decoration:none;font-size:0.9rem;font-weight:500;transition:color 0.2s;}"
+        ".nav a:hover{color:#1eaedb;text-decoration:underline;}"
+        "</style></head><body>"
+        "<div class='container'>"
+        "<h1>Параметры MAVLink</h1>"
+        "<div id='conn'>Ожидание данных...</div>"
+        "<button type='button' class='secondary' onclick=\"window.paramsFrozen=false; var x=new XMLHttpRequest();x.open('GET','/api/param_request');x.send();setTimeout(load,500);\">Запросить с автопилота</button>"
+        "<form method='post' action='/api/params' onsubmit='setTimeout(function(){window.location.reload();},500);'>"
+        "<table><tr><th>Параметр</th><th>Значение</th><th style='text-align:center;'>Получен</th></tr>"
+        "<tr><td>SERVO1_REVERSED</td><td><input name='SERVO1_REVERSED' id='v1' type='number' step='0.01'></td><td id='k1' style='text-align:center;'>—</td></tr>"
+        "<tr><td>SERVO3_TRIM</td><td><input name='SERVO3_TRIM' id='v2' type='number' step='0.01'></td><td id='k2' style='text-align:center;'>—</td></tr>"
+        "<tr><td>SERVO4_TRIM</td><td><input name='SERVO4_TRIM' id='v3' type='number' step='0.01'></td><td id='k3' style='text-align:center;'>—</td></tr>"
+        "</table><button type='submit'>Установить значения</button></form>"
+        "<div class='nav'><a href='/'>&larr; На главную</a><a href='/api/status'>JSON Статус</a><a href='/api/log/file'>Текст лог</a></div>"
+        "</div>"
         "<script>"
         "function load(){ var x=new XMLHttpRequest(); x.open('GET','/api/status'); x.onload=function(){"
         "var j=JSON.parse(x.responseText);"
-        "document.getElementById('conn').innerHTML='Подключение: '+(j.connected?'<span class=ok>Да</span>':'<span class=no>Нет</span>')+' | RX: '+j.packets_rx+' TX: '+j.packets_tx+' | Задержка: '+(j.connected?j.latency_ms:'—')+' ms | Потери: '+j.packet_drops+' ('+j.packet_loss_pct+'%)';"
+        "document.getElementById('conn').innerHTML='Связь: '+(j.connected?'<span class=ok>Активна</span>':'<span class=no>Нет</span>')+'<br><span style=\"font-size:0.85rem;color:#ccc;display:inline-block;margin-top:6px;\">RX: '+j.packets_rx+' | TX: '+j.packets_tx+' | Задержка: '+(j.connected?j.latency_ms+' мс':'—')+' | Потери: '+j.packet_drops+' ('+j.packet_loss_pct+'%)</span>';"
         "if(!window.paramsFrozen){document.getElementById('v1').value=j.SERVO1_REVERSED!=undefined?j.SERVO1_REVERSED:j.SERVO1_REVERS; document.getElementById('v2').value=j.SERVO3_TRIM; document.getElementById('v3').value=j.SERVO4_TRIM;} "
-        "document.getElementById('k1').textContent=(j.SERVO1_REVERSED_known||j.SERVO1_REVERS_known)?'да':'—'; document.getElementById('k2').textContent=j.SERVO3_TRIM_known?'да':'—'; document.getElementById('k3').textContent=j.SERVO4_TRIM_known?'да':'—'; "
+        "document.getElementById('k1').innerHTML=(j.SERVO1_REVERSED_known||j.SERVO1_REVERS_known)?'<span class=ok>✓</span>':'—'; document.getElementById('k2').innerHTML=j.SERVO3_TRIM_known?'<span class=ok>✓</span>':'—'; document.getElementById('k3').innerHTML=j.SERVO4_TRIM_known?'<span class=ok>✓</span>':'—'; "
         "if((j.SERVO1_REVERSED_known||j.SERVO1_REVERS_known)&&j.SERVO3_TRIM_known&&j.SERVO4_TRIM_known)window.paramsFrozen=true;"
         "}; x.send(); }"
-        "load(); setInterval(load,5000);"
+        "load(); setInterval(load,2000);"
         "</script></body></html>"
     );
     sendHtml(html);
@@ -233,6 +268,7 @@ static void handleApiSystemStats() {
     char udpInfo[32];
     bool hasUdp = bridgeGetUdpClientInfo(udpInfo, sizeof(udpInfo));
     String s;
+    s.reserve(256);
     s += F("{\"read_bytes\":"); s += bridgeBytesFromUart;
     s += F(",\"serial_dec_mav_msgs\":"); s += mavlinkPacketsRx;
     s += F(",\"tcp_connected\":"); s += bridgeGetTcpConnectedCount();
@@ -286,7 +322,7 @@ static void handleApiSettingsClientsUdp() {
     if (body.length() > 0) {
         int idx = body.indexOf(F("\"udp_client_ip\":\""));
         if (idx >= 0) {
-            idx += 19; /* длина "\"udp_client_ip\":\"" */
+            idx += 17; // strlen("\"udp_client_ip\":\"")
             int end = body.indexOf('"', idx);
             if (end > idx)
                 ip.fromString(body.substring(idx, end));
@@ -302,7 +338,7 @@ static void handleApiSettingsClientsUdp() {
         }
         idx = body.indexOf(F("\"udp_client_port\":"));
         if (idx >= 0) {
-            port = (uint16_t)body.substring(idx + 19).toInt();  /* 19 = len("\"udp_client_port\":") */
+            port = (uint16_t)body.substring(idx + 18).toInt(); // strlen("\"udp_client_port\":")
             if (port == 0) port = SERIAL_UDP_PORT;
         } else {
             idx = body.indexOf(F("\"port\":"));
@@ -338,18 +374,22 @@ static void handleLog() {
     sendJson(s);
 }
 
-/** Единый лог: ID, подключение, статистика, WiFi dBm, счётчики по типам, образцы RX/TX, последние MAVLink события, события ESP32. */
 static void handleApiLogFile() {
-    char buf[3072];
-    bridgeLogGetText(buf, sizeof(buf));
+    constexpr size_t kBufSize = 3072;
+    char* buf = (char*)malloc(kBufSize);
+    if (!buf) { if (s_server) s_server->send(503, F("text/plain"), F("Out of memory")); return; }
+    bridgeLogGetText(buf, kBufSize);
     if (s_server) s_server->send(200, F("text/plain; charset=utf-8"), buf);
+    free(buf);
 }
 
-/** Лог ESP32 (кольцевой буфер) — скачать. */
 static void handleApiLogEsp32() {
-    char buf[ESP_LOG_SIZE + 64];
-    size_t n = espLogGetText(buf, sizeof(buf));
+    constexpr size_t kBufSize = ESP_LOG_SIZE + 64;
+    char* buf = (char*)malloc(kBufSize);
+    if (!buf) { if (s_server) s_server->send(503, F("text/plain"), F("Out of memory")); return; }
+    espLogGetText(buf, kBufSize);
     if (s_server) s_server->send(200, F("text/plain; charset=utf-8"), buf);
+    free(buf);
 }
 
 /** Регистрирует все маршруты на server и вызывает server.begin(). Вызывается из main.cpp setup() один раз. */
