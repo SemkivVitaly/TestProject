@@ -1,7 +1,7 @@
 /**
  * bridge_log.cpp — формирование единого текстового лога для скачивания (/api/log/file).
  *
- * Хранит: уникальный ID (MAC), флаг подключения MAVLink, счётчики пакетов, RSSI,
+ * Хранит: уникальный ID (MAC), флаг подключения MAVLink, счётчики пакетов, RSSI, температура кристалла,
  * образцы последнего RX/TX (hex), последние записи из mavlinkLog и espLog.
  * bridgeLogGetText() собирает всё в один буфер для ответа HTTP.
  */
@@ -11,6 +11,7 @@
 #include "config.h"
 #include <Arduino.h>
 #include <WiFi.h>
+#include <cmath>
 #include <stdio.h>
 #include <string.h>
 
@@ -20,7 +21,8 @@
 #define LAST_UART_ERROR_LEN 32
 #define MAVLINK_LOG_TAIL 20    /* Сколько последних записей MAVLink выводить в лог. */
 
-static char s_uniqueId[24];
+/* OPTIONAL_ + MAC "AA:BB:CC:DD:EE:FF" = 26 + NUL → минимум 27 байт. */
+static char s_uniqueId[48];
 static bool s_connected = false;
 static uint32_t s_sent = 0, s_received = 0, s_lost = 0, s_total = 0;
 static int8_t s_rssi = 0;
@@ -121,6 +123,16 @@ size_t bridgeLogGetText(char* buf, size_t bufSize) {
                              (unsigned long)s_sent, (unsigned long)s_received,
                              (unsigned long)s_lost, (unsigned long)s_total);
     pos += (size_t)snprintf(buf + pos, bufSize - pos, "WiFi RSSI: %d dBm\n", (int)s_rssi);
+    {
+        float tChip = temperatureRead();
+        if (std::isfinite(static_cast<double>(tChip))) {
+            pos += (size_t)snprintf(buf + pos, bufSize - pos,
+                                    "Температура кристалла (внутр. датчик): %.1f C\n", (double)tChip);
+        } else {
+            pos += (size_t)snprintf(buf + pos, bufSize - pos,
+                                    "Температура кристалла (внутр. датчик): н/д\n");
+        }
+    }
     pos += (size_t)snprintf(buf + pos, bufSize - pos, "--- Счётчики по типам MAVLink ---\n");
     if (bufSize > pos + 64) {
         char cntBuf[384];

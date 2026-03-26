@@ -12,6 +12,7 @@
  */
 #include <Arduino.h>
 #include <WiFi.h>
+#include <cmath>
 #include <ESPmDNS.h>
 #include "config.h"
 #include "bridge_nvs.h"
@@ -48,6 +49,10 @@ bool servoAttached = false;
 /** Буфер для данных с UART от автопилота. Заполняется в loop(), передаётся в mavlinkProcessBytes() и bridgeSendUartToNetwork(). */
 static uint8_t bufFromUART[BUFFERSIZE];
 static uint16_t lenFromUART = 0;
+
+/** Периодическая запись температуры кристалла в esp_log (кольцевой буфер). */
+static uint32_t s_lastChipTempLogMs = 0;
+static const uint32_t kChipTempLogIntervalMs = 60000;
 
 static volatile bool s_staReconnecting = false;
 
@@ -154,6 +159,12 @@ void setup() {
 #ifdef BATTERY_SAVER
     esp_wifi_set_max_tx_power(50);
 #endif
+
+    {
+        float tc = temperatureRead();
+        if (std::isfinite(static_cast<double>(tc)))
+            espLogPrintf("[chip_temp] boot %.1f C", (double)tc);
+    }
 }
 
 /**
@@ -164,6 +175,14 @@ void loop() {
 #ifdef OTA_HANDLER
     ArduinoOTA.handle();  /* Проверка входящего OTA-обновления по Wi‑Fi. */
 #endif
+
+    uint32_t nowMs = millis();
+    if (nowMs - s_lastChipTempLogMs >= kChipTempLogIntervalMs) {
+        s_lastChipTempLogMs = nowMs;
+        float tc = temperatureRead();
+        if (std::isfinite(static_cast<double>(tc)))
+            espLogPrintf("[chip_temp] %.1f C", (double)tc);
+    }
 
 #ifdef WEB_SERVER
     webServer.handleClient();   /* Обработать один HTTP-запрос (главная, /api/status и т.д.). */

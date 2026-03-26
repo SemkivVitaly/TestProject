@@ -8,7 +8,7 @@
  *   — / → handleRoot() — главная с ссылками на лог, параметры, Bridge UI.
  *   — /params → handleParamsPage() — страница параметров SERVO (запрос с автопилота, форма установки).
  *   — /bridge → handleBridgePage() — раздача Bridge UI (из PROGMEM или LittleFS).
- *   — /api/status → handleApiStatus() — JSON: uptime, connected, packets, bytes, параметры SERVO, лог.
+ *   — /api/status → handleApiStatus() — JSON: uptime, heap, chip_temp_c, connected, packets, bytes, параметры SERVO, лог.
  *   — /api/link → handleApiLink() — JSON по каналу (packets, drops, latency, bytes).
  *   — /api/params GET/POST → handleParamsGet/handleParamsSet — чтение/установка параметров SERVO.
  *   — /api/param_request → handleParamRequest() — отправить запрос параметров на автопилот.
@@ -19,8 +19,10 @@
 #ifdef WEB_SERVER
 
 #include <Arduino.h>
+#include <cmath>
 #include <WebServer.h>
 #include <LittleFS.h>
+#include <esp_wifi.h>
 #include "bridge.h"
 #if __has_include("bridge_ui_embed.h")
 #include "bridge_ui_embed.h"
@@ -33,6 +35,35 @@
 #include "web_handlers.h"
 
 static WebServer* s_server = nullptr;  /* Указатель на сервер, переданный в webSetup(); используется в sendJson/sendHtml. */
+
+static const char* const kBridgePngPaths[] = {
+    "/add_16dp_icon.png",
+    "/remove_16dp_icon.png",
+    "/DroneBridgeLogo.png",
+    "/favicon-32x32.png",
+    "/favicon-16x16.png",
+    "/apple-touch-icon.png",
+};
+static const size_t kBridgePngCount = sizeof(kBridgePngPaths) / sizeof(kBridgePngPaths[0]);
+
+/** RSSI: в STA — уровень до роутера; в AP — средний уровень по подключённым клиентам (иначе WiFi.RSSI() всегда 0). */
+static int8_t bridgeGetWifiRssiDbm(void) {
+    wifi_mode_t mode = WiFi.getMode();
+    if ((mode == WIFI_STA || mode == WIFI_AP_STA) && WiFi.status() == WL_CONNECTED)
+        return WiFi.RSSI();
+    if (mode == WIFI_AP || mode == WIFI_AP_STA) {
+        if (WiFi.softAPgetStationNum() > 0) {
+            wifi_sta_list_t list;
+            if (esp_wifi_ap_get_sta_list(&list) == ESP_OK && list.num > 0) {
+                int sum = 0;
+                for (int i = 0; i < list.num && i < ESP_WIFI_MAX_CONN_NUM; i++)
+                    sum += list.sta[i].rssi;
+                return (int8_t)(sum / list.num);
+            }
+        }
+    }
+    return 0;
+}
 
 static void sendJson(const String& s) {
     if (s_server) s_server->send(200, F("application/json"), s);
@@ -91,6 +122,14 @@ static void handleApiStatus() {
     s.reserve(512 + MAVLINK_LOG_SIZE * (MAVLINK_LOG_ENTRY_LEN + 4));
     s += F("{\"uptime\":"); s += (millis() / 1000);
     s += F(",\"free_heap\":"); s += ESP.getFreeHeap();
+    {
+        float tc = temperatureRead();
+        s += F(",\"chip_temp_c\":");
+        if (std::isfinite(static_cast<double>(tc)))
+            s += String((double)tc, 1);
+        else
+            s += F("null");
+    }
     s += F(",\"connected\":"); s += mavlinkConnected ? F("true") : F("false");
     s += F(",\"tcp_connected\":"); s += bridgeGetTcpConnectedCount();
     s += F(",\"udp_known\":"); s += (bridgeGetUdpClientCount() > 0) ? F("true") : F("false");
@@ -161,9 +200,9 @@ static void handleParamsPage() {
         "function load(){ var x=new XMLHttpRequest(); x.open('GET','/api/status'); x.onload=function(){"
         "var j=JSON.parse(x.responseText);"
         "document.getElementById('conn').innerHTML='Связь: '+(j.connected?'<span class=ok>Активна</span>':'<span class=no>Нет</span>')+'<br><span style=\"font-size:0.85rem;color:#ccc;display:inline-block;margin-top:6px;\">RX: '+j.packets_rx+' | TX: '+j.packets_tx+' | Задержка: '+(j.connected?j.latency_ms+' мс':'—')+' | Потери: '+j.packet_drops+' ('+j.packet_loss_pct+'%)</span>';"
-        "if(!window.paramsFrozen){document.getElementById('v1').value=j.SERVO1_REVERSED!=undefined?j.SERVO1_REVERSED:j.SERVO1_REVERS; document.getElementById('v2').value=j.SERVO3_TRIM; document.getElementById('v3').value=j.SERVO4_TRIM;} "
+        "if(!window.paramsFrozen){document.getElementById('v1').value=j.SERVO1_REVERSED!=undefined?j.SERVO1_REVERSED:j.SERVO1_REVERSED; document.getElementById('v2').value=j.SERVO3_TRIM; document.getElementById('v3').value=j.SERVO4_TRIM;} "
         "document.getElementById('k1').innerHTML=(j.SERVO1_REVERSED_known||j.SERVO1_REVERS_known)?'<span class=ok>✓</span>':'—'; document.getElementById('k2').innerHTML=j.SERVO3_TRIM_known?'<span class=ok>✓</span>':'—'; document.getElementById('k3').innerHTML=j.SERVO4_TRIM_known?'<span class=ok>✓</span>':'—'; "
-        "if((j.SERVO1_REVERSED_known||j.SERVO1_REVERS_known)&&j.SERVO3_TRIM_known&&j.SERVO4_TRIM_known)window.paramsFrozen=true;"
+        "if((j.SERVO1_REVERSED_known||j.SERVO1_REVERSED_known)&&j.SERVO3_TRIM_known&&j.SERVO4_TRIM_known)window.paramsFrozen=true;"
         "}; x.send(); }"
         "load(); setInterval(load,2000);"
         "</script></body></html>"
@@ -248,9 +287,7 @@ static void handleApiSystemInfo() {
 }
 
 static void handleApiSystemStats() {
-    int8_t rssi = 0;
-    if (WiFi.getMode() == WIFI_STA && WiFi.status() == WL_CONNECTED)
-        rssi = WiFi.RSSI();
+    int8_t rssi = bridgeGetWifiRssiDbm();
     uint32_t totalRx = mavlinkPacketsRx + mavlinkPacketDrops;
     bridgeLogUpdateStats(mavlinkPacketsTx, mavlinkPacketsRx, mavlinkPacketDrops, totalRx);
     bridgeLogUpdateRssi(rssi);
@@ -283,6 +320,14 @@ static void handleApiSystemStats() {
     if (hasUdp) s += udpInfo;
     s += F("\",\"esp_rssi\":");
     s += (int)rssi;
+    s += F(",\"chip_temp_c\":");
+    {
+        float tchip = temperatureRead();
+        if (std::isfinite(static_cast<double>(tchip)))
+            s += String((double)tchip, 1);
+        else
+            s += F("null");
+    }
     s += F("}");
     sendJson(s);
 }
@@ -392,6 +437,30 @@ static void handleApiLogEsp32() {
     free(buf);
 }
 
+/** PNG из LittleFS (после uploadfs): иконки и логотип, на которые ссылается Bridge UI. */
+static void handleBridgeStaticPng(void) {
+    if (!s_server) return;
+    String uri = s_server->uri();
+    bool allowed = false;
+    for (size_t i = 0; i < kBridgePngCount; i++) {
+        if (uri == kBridgePngPaths[i]) {
+            allowed = true;
+            break;
+        }
+    }
+    if (!allowed) {
+        s_server->send(404, F("text/plain"), F("Not found"));
+        return;
+    }
+    File f = LittleFS.open(uri, "r");
+    if (!f) {
+        s_server->send(404, F("text/plain"), F("Not on filesystem; run pio run -t uploadfs"));
+        return;
+    }
+    s_server->streamFile(f, F("image/png"));
+    f.close();
+}
+
 /** Регистрирует все маршруты на server и вызывает server.begin(). Вызывается из main.cpp setup() один раз. */
 void webSetup(WebServer& server) {
     s_server = &server;
@@ -407,6 +476,8 @@ void webSetup(WebServer& server) {
     server.on(F("/api/log/esp32"), handleApiLogEsp32);
     server.on(F("/api/link"), handleApiLink);
     server.on(F("/bridge"), handleBridgePage);
+    for (size_t i = 0; i < kBridgePngCount; i++)
+        server.on(kBridgePngPaths[i], HTTP_GET, handleBridgeStaticPng);
     server.on(F("/smd"), []() { if (s_server) s_server->sendHeader(F("Location"), F("/bridge"), true); if (s_server) s_server->send(302, F("text/plain"), F("")); });
     server.on(F("/api/system/info"), handleApiSystemInfo);
     server.on(F("/api/system/stats"), handleApiSystemStats);
