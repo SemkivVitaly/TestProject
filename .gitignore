@@ -8,7 +8,6 @@ _New/esp32s3box_wifi_bridge/esp32s3box_wifi_bridge/.git
 *.dblite
 
 # BrigeLogCopy (.NET)
-BrigeLogCopy/bin/
 BrigeLogCopy/obj/
 BrigeLogCopy/.vs/
 
