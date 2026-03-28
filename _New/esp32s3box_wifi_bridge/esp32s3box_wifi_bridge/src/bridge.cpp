@@ -33,7 +33,7 @@ static IPAddress udpFromIP;           /* IP того, кто последним 
 static uint16_t udpFromPort = 0;      /* Порт UDP-клиента. */
 static bool udpClientKnown = false;   /* true после первого полученного пакета — мы знаем, куда слать ответ. */
 static uint32_t lastUdpPacketMs = 0; /* Время последнего пакета для таймаута отключения. */
-#define UDP_CLIENT_TIMEOUT_MS 30000   /* Если столько мс нет пакетов — считаем клиента отключённым. */
+#define UDP_CLIENT_TIMEOUT_MS 120000  /* Дольше ждём тихий UDP (GCS без частых пакетов). */
 #endif
 
 #ifdef BLUETOOTH
@@ -104,6 +104,7 @@ void bridgeAcceptClient(void) {
             if (tcpClients[i])
                 tcpClients[i].stop();
             tcpClients[i] = c;
+            tcpClients[i].setNoDelay(true);
             placed = true;
             debug.print(F("TCP client "));
             debug.println(c.remoteIP());
@@ -214,7 +215,7 @@ void bridgeSetUdpClient(IPAddress ip, uint16_t port) { (void)ip; (void)port; }
 bool bridgeGetUdpClientInfo(char* buf, size_t bufSize) { (void)buf; (void)bufSize; return false; }
 #endif
 
-/** Отправляет байты data длиной len во все активные каналы: каждому подключённому TCP-клиенту, известному UDP-клиенту (или broadcast на 14550), при BT — в Bluetooth. Увеличивает bridgeBytesTxNetwork и bridgeBytesFromUart. flush() по TCP — чтобы телеметрия сразу ушла в GCS. */
+/** Отправляет байты data длиной len во все активные каналы: каждому подключённому TCP-клиенту, известному UDP-клиенту (или broadcast на 14550), при BT — в Bluetooth. Увеличивает bridgeBytesTxNetwork и bridgeBytesFromUart. */
 void bridgeSendUartToNetwork(const uint8_t* data, uint16_t len) {
     bridgeBytesTxNetwork += len;
     bridgeBytesFromUart += len;
@@ -222,7 +223,6 @@ void bridgeSendUartToNetwork(const uint8_t* data, uint16_t len) {
     for (byte i = 0; i < MAX_NMEA_CLIENTS; i++) {
         if (tcpClients[i] && tcpClients[i].connected()) {
             tcpClients[i].write(data, len);
-            tcpClients[i].flush();
         }
     }
 #endif

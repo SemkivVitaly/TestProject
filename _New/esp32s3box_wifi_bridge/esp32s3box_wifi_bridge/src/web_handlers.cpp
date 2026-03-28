@@ -47,6 +47,22 @@ static const char* const kBridgePngPaths[] = {
 static const size_t kBridgePngCount = sizeof(kBridgePngPaths) / sizeof(kBridgePngPaths[0]);
 
 /** RSSI: в STA — уровень до роутера; в AP — средний уровень по подключённым клиентам (иначе WiFi.RSSI() всегда 0). */
+/** Возраст последнего HEARTBEAT и поле latency_ms для API: не смешиваем с сетевым ping — показываем свежесть телеметрии и период HB. */
+static void mavlinkFillTimingJson(String& s) {
+    uint32_t hbAge = 0;
+    if (mavlinkConnected && lastHeartbeatMs != 0) {
+        uint32_t now = millis();
+        hbAge = (now >= lastHeartbeatMs) ? (now - lastHeartbeatMs) : 0;
+    }
+    s += F(",\"heartbeat_age_ms\":");
+    s += hbAge;
+    s += F(",\"heartbeat_interval_ms\":");
+    s += mavlinkHeartbeatIntervalMs;
+    /* Совместимость с старыми клиентами: latency_ms = возраст последнего HEARTBEAT (не ICMP ping). */
+    s += F(",\"latency_ms\":");
+    s += hbAge;
+}
+
 static int8_t bridgeGetWifiRssiDbm(void) {
     wifi_mode_t mode = WiFi.getMode();
     if ((mode == WIFI_STA || mode == WIFI_AP_STA) && WiFi.status() == WL_CONNECTED)
@@ -113,7 +129,6 @@ static void handleStatus() {
 }
 
 static void handleApiStatus() {
-    uint32_t latencyMs = mavlinkConnected ? (millis() - lastHeartbeatMs) : 0;
     uint32_t totalRx = mavlinkPacketsRx + mavlinkPacketDrops;
     float packetLossPct = (totalRx > 0) ? (100.0f * (float)mavlinkPacketDrops / (float)totalRx) : 0.0f;
     char lastErr[64];
@@ -140,7 +155,7 @@ static void handleApiStatus() {
     s += F(",\"packets_processed\":"); s += mavlinkPacketsRx;
     s += F(",\"packet_drops\":"); s += mavlinkPacketDrops;
     s += F(",\"packet_loss_pct\":"); s += String(packetLossPct, 2);
-    s += F(",\"latency_ms\":"); s += latencyMs;
+    mavlinkFillTimingJson(s);
     s += F(",\"bytes_network_tx\":"); s += bridgeBytesTxNetwork;
     s += F(",\"bytes_network_rx\":"); s += bridgeBytesRxNetwork;
     s += F(",\"SERVO1_REVERSED\":"); s += paramServo1Revers;
@@ -199,12 +214,12 @@ static void handleParamsPage() {
         "<script>"
         "function load(){ var x=new XMLHttpRequest(); x.open('GET','/api/status'); x.onload=function(){"
         "var j=JSON.parse(x.responseText);"
-        "document.getElementById('conn').innerHTML='Связь: '+(j.connected?'<span class=ok>Активна</span>':'<span class=no>Нет</span>')+'<br><span style=\"font-size:0.85rem;color:#ccc;display:inline-block;margin-top:6px;\">RX: '+j.packets_rx+' | TX: '+j.packets_tx+' | Задержка: '+(j.connected?j.latency_ms+' мс':'—')+' | Потери: '+j.packet_drops+' ('+j.packet_loss_pct+'%)</span>';"
+        "document.getElementById('conn').innerHTML='Связь: '+(j.connected?'<span class=ok>Активна</span>':'<span class=no>Нет</span>')+'<br><span style=\"font-size:0.85rem;color:#ccc;display:inline-block;margin-top:6px;\">RX: '+j.packets_rx+' | TX: '+j.packets_tx+' | С последн. HEARTBEAT: '+(j.connected?j.heartbeat_age_ms+' мс':'—')+' | Период HB: '+(j.heartbeat_interval_ms||'—')+' мс | Потери: '+j.packet_drops+' ('+j.packet_loss_pct+'%)</span>';"
         "if(!window.paramsFrozen){document.getElementById('v1').value=j.SERVO1_REVERSED!=undefined?j.SERVO1_REVERSED:j.SERVO1_REVERSED; document.getElementById('v2').value=j.SERVO3_TRIM; document.getElementById('v3').value=j.SERVO4_TRIM;} "
         "document.getElementById('k1').innerHTML=(j.SERVO1_REVERSED_known||j.SERVO1_REVERS_known)?'<span class=ok>✓</span>':'—'; document.getElementById('k2').innerHTML=j.SERVO3_TRIM_known?'<span class=ok>✓</span>':'—'; document.getElementById('k3').innerHTML=j.SERVO4_TRIM_known?'<span class=ok>✓</span>':'—'; "
         "if((j.SERVO1_REVERSED_known||j.SERVO1_REVERSED_known)&&j.SERVO3_TRIM_known&&j.SERVO4_TRIM_known)window.paramsFrozen=true;"
         "}; x.send(); }"
-        "load(); setInterval(load,2000);"
+        "load(); setInterval(load,750);"
         "</script></body></html>"
     );
     sendHtml(html);
@@ -245,7 +260,6 @@ static void handleParamRequest() {
 }
 
 static void handleApiLink() {
-    uint32_t latencyMs = mavlinkConnected ? (millis() - lastHeartbeatMs) : 0;
     uint32_t totalRx = mavlinkPacketsRx + mavlinkPacketDrops;
     float packetLossPct = (totalRx > 0) ? (100.0f * (float)mavlinkPacketDrops / (float)totalRx) : 0.0f;
     String s;
@@ -255,7 +269,7 @@ static void handleApiLink() {
     s += F(",\"packets_processed\":"); s += mavlinkPacketsRx;
     s += F(",\"packet_drops\":"); s += mavlinkPacketDrops;
     s += F(",\"packet_loss_pct\":"); s += String(packetLossPct, 2);
-    s += F(",\"latency_ms\":"); s += latencyMs;
+    mavlinkFillTimingJson(s);
     s += F(",\"bytes_network_tx\":"); s += bridgeBytesTxNetwork;
     s += F(",\"bytes_network_rx\":"); s += bridgeBytesRxNetwork;
     s += F("}");
@@ -296,7 +310,7 @@ static void handleApiSystemStats() {
         static int8_t s_lastRssi = 0;
         static uint32_t s_lastRssiLogMs = 0;
         uint32_t now = millis();
-        if ((now - s_lastRssiLogMs >= 60000) || (rssi != 0 && (rssi < s_lastRssi - 5 || rssi > s_lastRssi + 5))) {
+        if ((now - s_lastRssiLogMs >= 15000) || (rssi != 0 && (rssi < s_lastRssi - 3 || rssi > s_lastRssi + 3))) {
             s_lastRssiLogMs = now;
             s_lastRssi = rssi;
             espLogPrintf("[WiFi] RSSI %d dBm", (int)rssi);
@@ -345,7 +359,7 @@ static void handleApiSettingsGet() {
     s += F(",\"gpio_rx\":"); s += c.gpio_rx;
     s += F(",\"gpio_rts\":0,\"gpio_cts\":0,\"rts_thresh\":64,\"proto\":"); s += c.proto;
     s += F(",\"baud\":"); s += c.baud;
-    s += F(",\"ltm_per_packet\":1,\"trans_pack_size\":256,\"serial_timeout\":50,\"rep_rssi_dbm\":0}");
+    s += F(",\"ltm_per_packet\":1,\"trans_pack_size\":128,\"serial_timeout\":50,\"rep_rssi_dbm\":0}");
     sendJson(s);
 }
 

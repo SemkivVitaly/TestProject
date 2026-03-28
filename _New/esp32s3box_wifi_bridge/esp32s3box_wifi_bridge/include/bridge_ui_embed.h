@@ -179,7 +179,7 @@ static const char BRIDGE_UI_HTML[] PROGMEM = R"BRIDGE_UI_RAW(<!DOCTYPE html>
                         <option value="3">3</option>
                         <option value="4">4</option>
                         <option value="5">5</option>
-                        <option value="6">6</option>
+                        <option value="6" selected>6</option>
                         <option value="7">7</option>
                         <option value="8">8</option>
                         <option value="9">9</option>
@@ -325,7 +325,7 @@ static const char BRIDGE_UI_HTML[] PROGMEM = R"BRIDGE_UI_RAW(<!DOCTYPE html>
                         <option value="32">32</option>
                         <option value="64">64</option>
                         <option value="96">96</option>
-                        <option value="128">128</option>
+                        <option value="128" selected>128</option>
                         <option value="160">160</option>
                         <option value="192">192</option>
                         <option value="224">224</option>
@@ -390,11 +390,10 @@ static const char BRIDGE_UI_HTML[] PROGMEM = R"BRIDGE_UI_RAW(<!DOCTYPE html>
     }
     while (get_settings() < 0) {
     }
-    // get stats every second (less aggressive to reduce flicker)
-    setInterval(get_stats, 1000)
-    setInterval(update_conn_status, 1000)
-    setInterval(check_for_issues, 1000)
-    setInterval(function(){fetch("/api/link").then(function(r){return r.json();}).then(function(j){var el=document.getElementById("link_metrics");if(el)el.innerHTML="Пакеты: приём "+j.packets_received+" отпр "+j.packets_sent+" обработано "+j.packets_processed+" | Задержка: "+(j.connected?j.latency_ms+" мс":"-")+" | Потери: "+j.packet_drops+" ("+j.packet_loss_pct+"%)";}).catch(function(){});}, 2000)
+    setInterval(get_stats, 500)
+    setInterval(update_conn_status, 500)
+    setInterval(check_for_issues, 500)
+    setInterval(function(){fetch("/api/link").then(function(r){return r.json();}).then(function(j){var el=document.getElementById("link_metrics");if(el)el.innerHTML="Пакеты: приём "+j.packets_received+" отпр "+j.packets_sent+" | С последн. HEARTBEAT: "+(j.connected?j.heartbeat_age_ms+" мс":"-")+" | Период HB: "+(j.heartbeat_interval_ms||"-")+" мс | Потери: "+j.packet_drops+" ("+j.packet_loss_pct+"%)";}).catch(function(){});}, 500)
     setTimeout(change_msp_ltm_visibility, 500)
     setTimeout(change_ap_ip_visibility, 500)
     setTimeout(change_uart_visibility, 500)

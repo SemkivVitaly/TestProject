@@ -1,4 +1,15 @@
 
-
 # Nested repo (we push from root)
 _New/esp32s3box_wifi_bridge/esp32s3box_wifi_bridge/.git
+
+# PlatformIO
+.pio/
+**/.pio/
+*.dblite
+
+# BrigeLogCopy (.NET)
+BrigeLogCopy/bin/
+BrigeLogCopy/obj/
+BrigeLogCopy/.vs/
+
+Thumbs.db

@@ -20,6 +20,8 @@
 
 extern bool mavlinkConnected;       /* true после получения хотя бы одного HEARTBEAT от автопилота. */
 extern uint32_t lastHeartbeatMs;    /* Время последнего HEARTBEAT (для таймаута отключения). */
+/** Сглаженный период между HEARTBEAT (мс), 0 пока не известен — для корректного отображения «задержки» в веб. */
+extern uint32_t mavlinkHeartbeatIntervalMs;
 extern uint8_t autopilotSysId;     /* System ID автопилота из HEARTBEAT. */
 extern uint8_t autopilotCompId;    /* Component ID автопилота. */
 

@@ -51,6 +51,9 @@ uint8_t mavlinkLogHead = 0;
 static uint32_t s_lastHeartbeatLogMs = 0;
 #define HEARTBEAT_LOG_INTERVAL_MS 10000
 
+uint32_t mavlinkHeartbeatIntervalMs = 0;
+static uint32_t s_prevHeartbeatArrivalMs = 0;
+
 /* System ID и Component ID, с которыми мы (GCS/мост) отправляем команды автопилоту. */
 static const uint8_t MAVLINK_GCS_SYSID = 255;
 static const uint8_t MAVLINK_GCS_COMPID = 190;
@@ -124,7 +127,20 @@ void mavlinkProcessBytes(const uint8_t* data, uint16_t len) {
             case MAVLINK_MSG_ID_HEARTBEAT: {
                 bool wasDisconnected = !mavlinkConnected;
                 mavlinkConnected = true;
-                lastHeartbeatMs = millis();
+                {
+                    uint32_t nowHb = millis();
+                    if (s_prevHeartbeatArrivalMs != 0U && nowHb > s_prevHeartbeatArrivalMs) {
+                        uint32_t dt = nowHb - s_prevHeartbeatArrivalMs;
+                        if (dt >= 50U && dt < 60000U) {
+                            if (mavlinkHeartbeatIntervalMs == 0U)
+                                mavlinkHeartbeatIntervalMs = dt;
+                            else
+                                mavlinkHeartbeatIntervalMs = (mavlinkHeartbeatIntervalMs * 3U + dt) / 4U;
+                        }
+                    }
+                    s_prevHeartbeatArrivalMs = nowHb;
+                    lastHeartbeatMs = nowHb;
+                }
                 autopilotSysId = msg.sysid;
                 autopilotCompId = msg.compid;
                 bridgeLogSetConnected(true);
@@ -170,6 +186,8 @@ void mavlinkCheckDisconnect(void) {
     if (millis() - lastHeartbeatMs <= MAVLINK_HEARTBEAT_TIMEOUT_MS)
         return;
     mavlinkConnected = false;
+    mavlinkHeartbeatIntervalMs = 0;
+    s_prevHeartbeatArrivalMs = 0;
     bridgeLogSetConnected(false);
     espLogPrintf("[MAVLink] disconnected (no heartbeat)");
     mavlinkAddLog("DISCONNECT (no heartbeat)");
@@ -191,7 +209,9 @@ void mavlinkSendParamRequest(const char* param_id) {
 /** Запрашивает у автопилота три параметра: SERVO1_REVERSED, SERVO3_TRIM, SERVO4_TRIM (три вызова mavlinkSendParamRequest). */
 void mavlinkRequestServoParams(void) {
     mavlinkSendParamRequest("SERVO1_REVERSED");
+    delay(45);
     mavlinkSendParamRequest("SERVO3_TRIM");
+    delay(45);
     mavlinkSendParamRequest("SERVO4_TRIM");
     mavlinkAddLog("TX PARAM_REQUEST_READ (SERVO1/3/4)");
 }
@@ -204,6 +224,7 @@ void mavlinkSendParamSet(const char* param_id, float value) {
                                autopilotSysId, autopilotCompId, param_id, value, MAV_PARAM_TYPE_REAL32);
     uint16_t n = mavlink_msg_to_send_buffer(buf, &msg);
     SerialUART.write(buf, n);
+
     mavlinkPacketsTx++;
     if (msg.msgid < 256)
         mavlinkTxByMsgid[msg.msgid]++;

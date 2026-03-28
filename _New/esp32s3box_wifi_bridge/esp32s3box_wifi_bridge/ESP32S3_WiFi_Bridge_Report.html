@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <title>Wi‑Fi мост ESP32‑S3 — краткий отчёт</title>
+  <style>
+    @page { size: A4; margin: 11mm; }
+    body { font-family: "Segoe UI", Calibri, Arial, sans-serif; font-size: 10pt; line-height: 1.38; color: #222; margin: 0; padding: 8mm 11mm; max-width: 190mm; }
+    h1 { font-size: 13pt; margin: 0 0 4pt 0; }
+    .sub { font-size: 8.5pt; color: #555; margin: 0 0 7pt 0; }
+    h2 { font-size: 10pt; margin: 7pt 0 3pt 0; font-weight: 600; }
+    p { margin: 0 0 5pt 0; text-align: justify; }
+    ul { margin: 2pt 0 6pt 16pt; padding: 0; }
+    li { margin-bottom: 2pt; }
+    table { width: 100%; border-collapse: collapse; font-size: 8.5pt; margin: 4pt 0 6pt 0; }
+    th, td { border: 1pt solid #aaa; padding: 3pt 5pt; vertical-align: top; }
+    th { background: #eee; }
+    .note { font-size: 8pt; color: #666; margin-top: 5pt; }
+    @media print { body { padding: 0; max-width: none; } }
+  </style>
+</head>
+<body>
+
+<h1>Wi‑Fi мост ESP32‑S3 (MAVLink) — краткий отчёт</h1>
+<p class="sub">Для Word: откройте этот файл через «Файл → Открыть». Сравнение с <a href="https://github.com/DroneBridge/DroneBridge">DroneBridge/DroneBridge</a>.</p>
+
+<p><strong>Цель.</strong> Связать полётный контроллер с Mission Planner, QGroundControl и аналогами по Wi‑Fi без USB: прозрачный обмен <strong>UART ↔ TCP/UDP</strong>. Веб и API работают <strong>только в локальной сети платы</strong> (интернет не нужен). Настройки Wi‑Fi, UART и протоколов сохраняются в <strong>NVS</strong> и не сбрасываются при отключении питания.</p>
+
+<p><strong>Как подключать GCS.</strong> Типично: <strong>TCP</strong> на порт <strong>8880</strong> или <strong>UDP</strong> <strong>14550</strong> (как у стандартных наземных станций). В режиме точки доступа веб открывается по адресу платы (например <strong>192.168.2.1</strong>); в режиме клиента удобен доступ по <strong>mDNS</strong> (имя задаётся в конфиге, например <code>esps3.local</code>). До <strong>четырёх</strong> одновременных TCP‑клиентов.</p>
+
+<h2>Главное для отдела</h2>
+<ul>
+  <li><strong>Диагностика канала и железа:</strong> <strong>RSSI</strong> в STA и в AP (в AP — усреднение по подключённым станциям, а не бессмысленный «ноль»); <strong>температура кристалла</strong> ESP32; по MAVLink — heartbeat, время с последнего heartbeat, счётчики пакетов, <strong>процент потерь</strong>, байты через мост; видимость TCP/UDP‑клиентов.</li>
+  <li><strong>Логи под испытания и приёмку:</strong> единый текст (<code>/api/log/file</code>) — идентификатор устройства, статус связи с автопилотом, RSSI, t°, статистика пакетов, счётчики по типам MAVLink, <strong>hex‑образцы</strong> последних кадров RX/TX, хвост событий и лог ESP32. Дополнительно — JSON по пакетам и отдельный лог платы. Всё отдаётся по HTTP; выгрузку можно <strong>сохранить в файл из браузера</strong> и приложить к протоколу.</li>
+  <li><strong>Веб‑функции:</strong> Bridge UI (метрики + форма настроек + добавление/сброс UDP‑клиента), главная с быстрыми ссылками, страница <strong>параметров SERVO</strong> (запрос/установка по MAVLink), JSON API для скриптов на стенде.</li>
+</ul>
+
+<h2>Оригинал DroneBridge и наша прошивка</h2>
+<table>
+  <tr><th></th><th>Оригинал (экосистема)</th><th>Наша ESP32‑S3</th></tr>
+  <tr><td>Роль</td><td>WifiBroadcast: Pi, видео, Android; ESP — узел их протокола</td><td>Прозрачный MAVLink‑мост: стенд, цех, лаборатория без всей связки</td></tr>
+  <tr><td>GCS</td><td>Упор на приложение и модули DroneBridge</td><td>Прямое TCP/UDP под MP/QGC, без обязательного Android</td></tr>
+  <tr><td>Панель</td><td>Настройка под их модель линка</td><td>Одна панель: Wi‑Fi (RSSI STA/AP), t° чипа, метрики MAVLink и моста</td></tr>
+  <tr><td>Доказательства</td><td>Распределённые системные логи</td><td>Один снимок состояния с платы, сохраняемый в файл</td></tr>
+  <tr><td>Код</td><td>Крупный монорепозиторий, смешение лицензий</td><td>Компактный репозиторий отдела — удобно для аудита</td></tr>
+</table>
+
+<p><strong>Итог.</strong> Для дальнобойного FPV и полного стека уместен DroneBridge. Для задач отдела с <strong>стандартным MAVLink на стенде</strong> предпочтительнее данная прошивка: предсказуемое подключение GCS, устойчивые настройки в NVS, расширенная диагностика (RSSI, t°, потери), документируемые логи и более широкий веб при работе в закрытом контуре Wi‑Fi.</p>
+
+</body>
+</html>

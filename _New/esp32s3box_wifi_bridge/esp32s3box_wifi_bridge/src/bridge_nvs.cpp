@@ -27,7 +27,7 @@ static void setDefaults(void) {
     bridge_nvs_config.wifi_pass[BRIDGE_NVS_PASS_LEN - 1] = '\0';
     strncpy(bridge_nvs_config.hostname, HOSTNAME, BRIDGE_NVS_HOSTNAME_LEN - 1);
     bridge_nvs_config.hostname[BRIDGE_NVS_HOSTNAME_LEN - 1] = '\0';
-    bridge_nvs_config.wifi_chan = 1;
+    bridge_nvs_config.wifi_chan = 6;
     strncpy(bridge_nvs_config.ap_ip, "192.168.2.1", BRIDGE_NVS_APIP_LEN - 1);
     bridge_nvs_config.ap_ip[BRIDGE_NVS_APIP_LEN - 1] = '\0';
     bridge_nvs_config.baud = UART_BAUD;
