@@ -51,13 +51,12 @@ static const uint32_t kChipTempLogIntervalMs = 15000;
 
 static volatile bool s_staReconnecting = false;
 
-/** Отключение Wi‑Fi power save, повышение TX, для AP — более частый beacon (меньше «долгий» первый ping). */
+/** Отключение Wi‑Fi power save; TX и beacon из config.h (см. WIFI_TUNE_AGGRESSIVE). */
 static void applyWifiLowLatencyAndPower(void) {
     WiFi.setSleep(false);
     esp_wifi_set_ps(WIFI_PS_NONE);
 #ifndef BATTERY_SAVER
-    /* Шаг 0.25 dBm; 80 соответствует ~20 dBm (зависит от модуля и регуляторики). */
-    esp_wifi_set_max_tx_power(80);
+    esp_wifi_set_max_tx_power(WIFI_MAX_TX_POWER);
 #endif
 
     wifi_mode_t mode;
@@ -66,7 +65,7 @@ static void applyWifiLowLatencyAndPower(void) {
     if (mode == WIFI_MODE_AP || mode == WIFI_MODE_APSTA) {
         wifi_config_t cfg = {};
         if (esp_wifi_get_config(WIFI_IF_AP, &cfg) == ESP_OK) {
-            cfg.ap.beacon_interval = 50; /* TU, по умолчанию 100 — реже просыпание клиента */
+            cfg.ap.beacon_interval = WIFI_AP_BEACON_INTERVAL_TU;
             esp_wifi_set_config(WIFI_IF_AP, &cfg);
         }
     }
@@ -100,8 +99,8 @@ void setup() {
     uint32_t baud = (bridge_nvs_config.baud > 0) ? bridge_nvs_config.baud : (uint32_t)UART_BAUD;
     int8_t rxPin = (bridge_nvs_config.gpio_rx >= 0) ? bridge_nvs_config.gpio_rx : (int8_t)SERIAL_RXPIN;
     int8_t txPin = (bridge_nvs_config.gpio_tx >= 0) ? bridge_nvs_config.gpio_tx : (int8_t)SERIAL_TXPIN;
-    SerialUART.setRxBufferSize(4096);
-    SerialUART.setTxBufferSize(2048);
+    SerialUART.setRxBufferSize(8192);
+    SerialUART.setTxBufferSize(4096);
     SerialUART.begin(baud, SERIAL_PARAM, (int)rxPin, (int)txPin);
 
 #ifdef WEB_SERVER

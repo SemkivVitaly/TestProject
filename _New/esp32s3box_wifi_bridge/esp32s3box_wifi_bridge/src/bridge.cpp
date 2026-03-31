@@ -24,6 +24,23 @@ extern HardwareSerial SerialUART;  /* Объявлен в main.cpp — втор�
 #include <WiFiClient.h>
 static WiFiServer tcpServer(SERIAL_TCP_PORT);   /* Сервер слушает порт из config.h (8880). */
 static WiFiClient tcpClients[MAX_NMEA_CLIENTS]; /* Массив слотов для подключённых клиентов. */
+
+/** Дозаписывает весь буфер в TCP-клиент (write может вернуть меньше len). */
+static void tcpClientWriteAll(WiFiClient& c, const uint8_t* data, uint16_t len) {
+    uint16_t off = 0;
+    uint16_t idle = 0;
+    while (off < len && c.connected()) {
+        int w = c.write(data + off, len - off);
+        if (w > 0) {
+            off += (uint16_t)w;
+            idle = 0;
+            continue;
+        }
+        yield();
+        if (++idle > 600)
+            break;
+    }
+}
 #endif
 
 #if defined(PROTOCOL_UDP)
@@ -221,9 +238,8 @@ void bridgeSendUartToNetwork(const uint8_t* data, uint16_t len) {
     bridgeBytesFromUart += len;
 #if defined(PROTOCOL_TCP)
     for (byte i = 0; i < MAX_NMEA_CLIENTS; i++) {
-        if (tcpClients[i] && tcpClients[i].connected()) {
-            tcpClients[i].write(data, len);
-        }
+        if (tcpClients[i] && tcpClients[i].connected())
+            tcpClientWriteAll(tcpClients[i], data, len);
     }
 #endif
 

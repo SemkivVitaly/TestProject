@@ -209,9 +209,7 @@ void mavlinkSendParamRequest(const char* param_id) {
 /** Запрашивает у автопилота три параметра: SERVO1_REVERSED, SERVO3_TRIM, SERVO4_TRIM (три вызова mavlinkSendParamRequest). */
 void mavlinkRequestServoParams(void) {
     mavlinkSendParamRequest("SERVO1_REVERSED");
-    delay(45);
     mavlinkSendParamRequest("SERVO3_TRIM");
-    delay(45);
     mavlinkSendParamRequest("SERVO4_TRIM");
     mavlinkAddLog("TX PARAM_REQUEST_READ (SERVO1/3/4)");
 }

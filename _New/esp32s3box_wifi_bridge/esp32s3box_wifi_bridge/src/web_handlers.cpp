@@ -374,7 +374,7 @@ static void handleApiSettingsPost() {
     if (body.length())
         setBridgeConfigFromJson(body.c_str());
     sendJson(F("{\"msg\":\"Настройки сохранены. Перезагрузка...\"}"));
-    delay(1000);
+    delay(150);
     ESP.restart();
 }
 

@@ -37,6 +37,18 @@
 /* Маска подсети: 255.255.255.0 — одна подсеть до 254 устройств. */
 #define NETMASK   IPAddress(255, 255, 255, 0)
 
+/* Опционально: раскомментируйте для прежних агрессивных настроек Wi‑Fi (max TX ~20 dBm, beacon 50 TU). */
+/* #define WIFI_TUNE_AGGRESSIVE */
+
+#ifndef WIFI_TUNE_AGGRESSIVE
+/* esp_wifi_set_max_tx_power(): шаг 0.25 dBm; умеренное значение снижает ошибки PHY на части антенн/плат. */
+#define WIFI_MAX_TX_POWER 60
+#define WIFI_AP_BEACON_INTERVAL_TU 100
+#else
+#define WIFI_MAX_TX_POWER 80
+#define WIFI_AP_BEACON_INTERVAL_TU 50
+#endif
+
 /* ========== Мост: протоколы ========== */
 /* Включить TCP-сервер: Mission Planner подключается по TCP к порту SERIAL_TCP_PORT. */
 #define PROTOCOL_TCP
@@ -46,8 +58,8 @@
 #define MAX_NMEA_CLIENTS 4
 
 /* ========== UART к автопилоту ========== */
-/* Скорость обмена с автопилотом (бит/с). Типично 57600 или 115200 для MAVLink. */
-#define UART_BAUD 57600
+/* Скорость по умолчанию до первой записи в NVS; на автопилоте SERIALx_BAUD должен совпадать (часто 115). */
+#define UART_BAUD 115200
 /* 8 бит данных, без чётности, 1 стоп-бит — стандарт для MAVLink. */
 #define SERIAL_PARAM SERIAL_8N1
 /* GPIO для передачи (TX): пин ESP32, который идёт на RX автопилота. */
