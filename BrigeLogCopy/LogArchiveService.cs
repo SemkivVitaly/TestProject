@@ -7,12 +7,13 @@ namespace BrigeLogCopy
 {
     public static class LogArchiveService
     {
-        public static string SanitizeFolderName(string serial)
+        /// <summary>Безопасное имя папки для № акта или серийного номера.</summary>
+        public static string SanitizeFolderName(string name)
         {
-            if (string.IsNullOrWhiteSpace(serial))
-                return "Без_серийного_номера";
+            if (string.IsNullOrWhiteSpace(name))
+                return "Без_имени";
             var inv = Path.GetInvalidFileNameChars();
-            var chars = serial.Trim().ToCharArray();
+            var chars = name.Trim().ToCharArray();
             for (int i = 0; i < chars.Length; i++)
             {
                 if (Array.IndexOf(inv, chars[i]) >= 0)
@@ -21,10 +22,11 @@ namespace BrigeLogCopy
             return new string(chars);
         }
 
-        public static async Task SaveLogsFromBridgeAsync(string bridgeBaseUrl, string reportsRootPath, string serialRaw)
+        /// <param name="actFolderPath">Папка конкретного акта (уже создана); внутри неё создаётся подпапка по серийному номеру.</param>
+        public static async Task SaveLogsFromBridgeAsync(string bridgeBaseUrl, string actFolderPath, string serialRaw)
         {
             string folderName = SanitizeFolderName(serialRaw);
-            string targetDir = Path.Combine(reportsRootPath.Trim(), folderName);
+            string targetDir = Path.Combine(actFolderPath.Trim(), folderName);
             Directory.CreateDirectory(targetDir);
 
             string stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");

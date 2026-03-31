@@ -90,7 +90,7 @@ namespace BrigeLogCopy
             this.labelPath.Name = "labelPath";
             this.labelPath.Size = new System.Drawing.Size(163, 15);
             this.labelPath.TabIndex = 6;
-            this.labelPath.Text = "Папка для отчёта и архивов:";
+            this.labelPath.Text = "Корневая папка (внутри — папка акта):";
             // 
             // txtReportsPath
             // 

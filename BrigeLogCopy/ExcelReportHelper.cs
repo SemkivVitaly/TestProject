@@ -16,9 +16,10 @@ namespace BrigeLogCopy
         private const int FirstDataRow = 3;
         private const int ColCount = 5;
 
-        public static string GetReportPath(string baseDirectory)
+        /// <param name="actFolderPath">Папка по № акта (внутри неё лежит «Отчет_Bridge.xlsx»).</param>
+        public static string GetReportPath(string actFolderPath)
         {
-            return Path.Combine(baseDirectory.Trim(), "Отчет_Bridge.xlsx");
+            return Path.Combine(actFolderPath.Trim(), "Отчет_Bridge.xlsx");
         }
 
         /// <summary>
@@ -122,11 +123,38 @@ namespace BrigeLogCopy
 
         private static void EnsureStructureAndUpdateAct(Excel.Worksheet ws, string actNumber)
         {
-            var a1 = ws.Cells[HeaderRow, 1].Text?.ToString() ?? "";
+            string a1 = GetCellText(ws, HeaderRow, 1);
             if (string.IsNullOrWhiteSpace(a1) || !a1.Trim().Equals("№", StringComparison.Ordinal))
                 CreateNewReportStructure(ws, actNumber);
             else
                 SetActRow(ws, actNumber);
+        }
+
+        private static string GetCellText(Excel.Worksheet ws, int row, int col)
+        {
+            Excel.Range cell = (Excel.Range)ws.Cells[row, col];
+            try
+            {
+                object t = cell.Text;
+                return t?.ToString() ?? "";
+            }
+            finally
+            {
+                Marshal.FinalReleaseComObject(cell);
+            }
+        }
+
+        private static object GetCellValue2(Excel.Worksheet ws, int row, int col)
+        {
+            Excel.Range cell = (Excel.Range)ws.Cells[row, col];
+            try
+            {
+                return cell.Value2;
+            }
+            finally
+            {
+                Marshal.FinalReleaseComObject(cell);
+            }
         }
 
         private static void SetActRow(Excel.Worksheet ws, string actNumber)
@@ -160,8 +188,8 @@ namespace BrigeLogCopy
             const int maxScan = 100000;
             for (int r = FirstDataRow; r < FirstDataRow + maxScan; r++)
             {
-                var v1 = ws.Cells[r, 1].Value2;
-                var v2 = ws.Cells[r, 2].Value2;
+                object v1 = GetCellValue2(ws, r, 1);
+                object v2 = GetCellValue2(ws, r, 2);
                 if (v1 == null && v2 == null)
                     return r;
             }
@@ -173,7 +201,7 @@ namespace BrigeLogCopy
             int max = 0;
             for (int r = FirstDataRow; r < nextRow; r++)
             {
-                var v = ws.Cells[r, 1].Value2;
+                object v = GetCellValue2(ws, r, 1);
                 if (v == null) continue;
                 int n;
                 if (v is double d)

@@ -23,7 +23,7 @@ namespace BrigeLogCopy
         {
             using (var dlg = new FolderBrowserDialog())
             {
-                dlg.Description = "Папка для отчёта Excel и архивов логов";
+                dlg.Description = "Корневая папка: внутри будет создана папка с именем по № акта";
                 dlg.SelectedPath = string.IsNullOrWhiteSpace(txtReportsPath.Text)
                     ? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
                     : txtReportsPath.Text;
@@ -64,15 +64,20 @@ namespace BrigeLogCopy
                 return;
             }
 
+            string rootFull;
             try
             {
-                Path.GetFullPath(root);
+                rootFull = Path.GetFullPath(root.Trim());
             }
             catch
             {
                 MessageBox.Show(this, "Некорректный путь к папке.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
             }
+
+            string actFolderName = LogArchiveService.SanitizeFolderName(act);
+            string actRoot = Path.Combine(rootFull, actFolderName);
+            Directory.CreateDirectory(actRoot);
 
             string bridgeUrl = ConfigurationManager.AppSettings["BridgeBaseUrl"];
             if (string.IsNullOrWhiteSpace(bridgeUrl))
@@ -85,7 +90,7 @@ namespace BrigeLogCopy
             {
                 try
                 {
-                    await LogArchiveService.SaveLogsFromBridgeAsync(bridgeUrl, root, serial).ConfigureAwait(true);
+                    await LogArchiveService.SaveLogsFromBridgeAsync(bridgeUrl, actRoot, serial).ConfigureAwait(true);
                 }
                 catch (Exception exNet)
                 {
@@ -100,7 +105,7 @@ namespace BrigeLogCopy
                 try
                 {
                     ExcelReportHelper.AppendOperationRow(
-                        ExcelReportHelper.GetReportPath(root),
+                        ExcelReportHelper.GetReportPath(actRoot),
                         act,
                         serial,
                         fio);
@@ -116,7 +121,7 @@ namespace BrigeLogCopy
                 }
 
                 MessageBox.Show(this,
-                    "Готово: обновлён файл «Отчет_Bridge.xlsx», логи — в подпапке «" +
+                    "Готово. Папка акта: «" + actFolderName + "»\n«Отчет_Bridge.xlsx» и подпапка логов «" +
                     LogArchiveService.SanitizeFolderName(serial) + "».",
                     Text,
                     MessageBoxButtons.OK,
