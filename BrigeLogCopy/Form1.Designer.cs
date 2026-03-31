@@ -27,7 +27,6 @@ namespace BrigeLogCopy
             this.txtReportsPath = new System.Windows.Forms.TextBox();
             this.btnBrowseFolder = new System.Windows.Forms.Button();
             this.btnSaveLogs = new System.Windows.Forms.Button();
-            this.labelBridgeUrl = new System.Windows.Forms.Label();
             this.SuspendLayout();
             // 
             // labelFio
@@ -35,13 +34,13 @@ namespace BrigeLogCopy
             this.labelFio.AutoSize = true;
             this.labelFio.Location = new System.Drawing.Point(18, 18);
             this.labelFio.Name = "labelFio";
-            this.labelFio.Size = new System.Drawing.Size(120, 15);
+            this.labelFio.Size = new System.Drawing.Size(103, 15);
             this.labelFio.TabIndex = 0;
             this.labelFio.Text = "ФИО сотрудника:";
             // 
             // txtFio
             // 
-            this.txtFio.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
+            this.txtFio.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.txtFio.Location = new System.Drawing.Point(200, 15);
             this.txtFio.Name = "txtFio";
@@ -53,13 +52,13 @@ namespace BrigeLogCopy
             this.labelAct.AutoSize = true;
             this.labelAct.Location = new System.Drawing.Point(18, 54);
             this.labelAct.Name = "labelAct";
-            this.labelAct.Size = new System.Drawing.Size(52, 15);
+            this.labelAct.Size = new System.Drawing.Size(51, 15);
             this.labelAct.TabIndex = 2;
             this.labelAct.Text = "№ Акта:";
             // 
             // txtActNumber
             // 
-            this.txtActNumber.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
+            this.txtActNumber.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.txtActNumber.Location = new System.Drawing.Point(200, 51);
             this.txtActNumber.Name = "txtActNumber";
@@ -71,13 +70,13 @@ namespace BrigeLogCopy
             this.labelSerial.AutoSize = true;
             this.labelSerial.Location = new System.Drawing.Point(18, 90);
             this.labelSerial.Name = "labelSerial";
-            this.labelSerial.Size = new System.Drawing.Size(102, 15);
+            this.labelSerial.Size = new System.Drawing.Size(107, 15);
             this.labelSerial.TabIndex = 4;
             this.labelSerial.Text = "Серийный номер:";
             // 
             // txtSerial
             // 
-            this.txtSerial.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
+            this.txtSerial.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.txtSerial.Location = new System.Drawing.Point(200, 87);
             this.txtSerial.Name = "txtSerial";
@@ -89,13 +88,13 @@ namespace BrigeLogCopy
             this.labelPath.AutoSize = true;
             this.labelPath.Location = new System.Drawing.Point(18, 126);
             this.labelPath.Name = "labelPath";
-            this.labelPath.Size = new System.Drawing.Size(168, 15);
+            this.labelPath.Size = new System.Drawing.Size(163, 15);
             this.labelPath.TabIndex = 6;
             this.labelPath.Text = "Папка для отчёта и архивов:";
             // 
             // txtReportsPath
             // 
-            this.txtReportsPath.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
+            this.txtReportsPath.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.txtReportsPath.Location = new System.Drawing.Point(200, 123);
             this.txtReportsPath.Name = "txtReportsPath";
@@ -115,7 +114,7 @@ namespace BrigeLogCopy
             // 
             // btnSaveLogs
             // 
-            this.btnSaveLogs.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
+            this.btnSaveLogs.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left) 
             | System.Windows.Forms.AnchorStyles.Right)));
             this.btnSaveLogs.Font = new System.Drawing.Font("Segoe UI", 10F, System.Drawing.FontStyle.Bold);
             this.btnSaveLogs.Location = new System.Drawing.Point(18, 168);
@@ -126,23 +125,11 @@ namespace BrigeLogCopy
             this.btnSaveLogs.UseVisualStyleBackColor = true;
             this.btnSaveLogs.Click += new System.EventHandler(this.btnSaveLogs_Click);
             // 
-            // labelBridgeUrl
-            // 
-            this.labelBridgeUrl.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
-            | System.Windows.Forms.AnchorStyles.Right)));
-            this.labelBridgeUrl.ForeColor = System.Drawing.SystemColors.GrayText;
-            this.labelBridgeUrl.Location = new System.Drawing.Point(18, 220);
-            this.labelBridgeUrl.Name = "labelBridgeUrl";
-            this.labelBridgeUrl.Size = new System.Drawing.Size(602, 36);
-            this.labelBridgeUrl.TabIndex = 10;
-            this.labelBridgeUrl.Text = "Адрес моста загружается из App.config…";
-            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.ClientSize = new System.Drawing.Size(644, 271);
-            this.Controls.Add(this.labelBridgeUrl);
             this.Controls.Add(this.btnSaveLogs);
             this.Controls.Add(this.btnBrowseFolder);
             this.Controls.Add(this.txtReportsPath);
@@ -161,6 +148,7 @@ namespace BrigeLogCopy
             this.Load += new System.EventHandler(this.Form1_Load);
             this.ResumeLayout(false);
             this.PerformLayout();
+
         }
 
         #endregion
@@ -175,6 +163,5 @@ namespace BrigeLogCopy
         private System.Windows.Forms.TextBox txtReportsPath;
         private System.Windows.Forms.Button btnBrowseFolder;
         private System.Windows.Forms.Button btnSaveLogs;
-        private System.Windows.Forms.Label labelBridgeUrl;
     }
 }

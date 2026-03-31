@@ -15,10 +15,8 @@ namespace BrigeLogCopy
 
         private void Form1_Load(object sender, EventArgs e)
         {
-            var url = ConfigurationManager.AppSettings["BridgeBaseUrl"];
-            if (string.IsNullOrWhiteSpace(url))
-                url = "http://192.168.2.1";
-            labelBridgeUrl.Text = "Адрес моста (App.config → BridgeBaseUrl): " + url;
+            
+            
         }
 
         private void btnBrowseFolder_Click(object sender, EventArgs e)
