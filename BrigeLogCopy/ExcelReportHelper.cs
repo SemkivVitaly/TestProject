@@ -1,251 +1,238 @@
+using System;
+using System.Globalization;
+using System.IO;
 using System.Runtime.InteropServices;
 using Excel = Microsoft.Office.Interop.Excel;
 
-namespace BrigeLogCopy;
-
-internal static class ExcelReportHelper
+namespace BrigeLogCopy
 {
-    private const string Manufacturer = "Россия";
-    private const int ExcelLastRow = 1048576;
-    private const int LastCol = 5;
-    /// <summary>Строка заголовков таблицы.</summary>
-    private const int RowHeader = 1;
-    /// <summary>Строка «№ Акта» (все столбцы объединены).</summary>
-    private const int RowAct = 2;
-    /// <summary>Первая строка данных (порядковый №, дата, …).</summary>
-    private const int RowFirstData = 3;
-
-    internal static void AppendRow(string excelPath, string actNumber, string serialNumber, string executorFio)
+    /// <summary>
+    /// Отчёт Excel «Отчет_Bridge»: заголовки, строка акта, строки операций.
+    /// </summary>
+    public static class ExcelReportHelper
     {
-        Excel.Application? app = null;
-        Excel.Workbook? wb = null;
-        Excel.Worksheet? ws = null;
+        private const int HeaderRow = 1;
+        private const int ActRow = 2;
+        private const int FirstDataRow = 3;
+        private const int ColCount = 5;
 
-        try
+        public static string GetReportPath(string baseDirectory)
         {
-            app = new Excel.Application { Visible = false, DisplayAlerts = false };
-            var fullPath = Path.GetFullPath(excelPath);
+            return Path.Combine(baseDirectory.Trim(), "Отчет_Bridge.xlsx");
+        }
 
-            if (File.Exists(fullPath))
+        /// <summary>
+        /// Добавляет строку операции и обновляет строку № акта (объединённые ячейки).
+        /// </summary>
+        public static void AppendOperationRow(
+            string reportFullPath,
+            string actNumber,
+            string serialNumber,
+            string employeeFio)
+        {
+            if (string.IsNullOrWhiteSpace(reportFullPath))
+                throw new ArgumentException("Путь к отчёту не задан.", nameof(reportFullPath));
+
+            var dir = Path.GetDirectoryName(reportFullPath);
+            if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
+                Directory.CreateDirectory(dir);
+
+            bool reportExists = File.Exists(reportFullPath);
+
+            Excel.Application app = null;
+            Excel.Workbook wb = null;
+
+            try
             {
-                wb = app.Workbooks.Open(fullPath);
-                ws = (Excel.Worksheet)wb.Sheets[1];
-                EnsureHeaders(ws);
-                WriteActMergedRow(ws, actNumber);
-                int row = GetNextDataRow(ws);
-                FillDataRow(ws, row, serialNumber, executorFio);
-                ApplyGridBorders(ws, row);
-                wb.Save();
+                app = new Excel.Application
+                {
+                    Visible = false,
+                    DisplayAlerts = false,
+                    ScreenUpdating = false
+                };
+
+                if (reportExists)
+                    wb = app.Workbooks.Open(reportFullPath);
+                else
+                    wb = app.Workbooks.Add();
+
+                var ws = (Excel.Worksheet)wb.Sheets[1];
+                ws.Name = "Отчёт";
+
+                if (!reportExists)
+                    CreateNewReportStructure(ws, actNumber);
+                else
+                    EnsureStructureAndUpdateAct(ws, actNumber);
+
+                int nextRow = FindNextDataRow(ws);
+                int opNo = GetNextOperationNumber(ws, nextRow);
+
+                ws.Cells[nextRow, 1] = opNo;
+                ws.Cells[nextRow, 2] = DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss", CultureInfo.GetCultureInfo("ru-RU"));
+                ws.Cells[nextRow, 3] = "Россия";
+                ws.Cells[nextRow, 4] = serialNumber ?? "";
+                ws.Cells[nextRow, 5] = employeeFio ?? "";
+
+                ApplyTableGridBorders(ws, nextRow);
+
+                if (reportExists)
+                    wb.Save();
+                else
+                    wb.SaveAs(reportFullPath, Excel.XlFileFormat.xlOpenXMLWorkbook);
             }
+            finally
+            {
+                if (wb != null)
+                {
+                    wb.Close(false);
+                    Marshal.FinalReleaseComObject(wb);
+                }
+                if (app != null)
+                {
+                    app.Quit();
+                    Marshal.FinalReleaseComObject(app);
+                }
+                GC.Collect();
+                GC.WaitForPendingFinalizers();
+            }
+        }
+
+        private static void CreateNewReportStructure(Excel.Worksheet ws, string actNumber)
+        {
+            ws.Cells[HeaderRow, 1] = "№";
+            ws.Cells[HeaderRow, 2] = "Дата";
+            ws.Cells[HeaderRow, 3] = "производитель";
+            ws.Cells[HeaderRow, 4] = "Серийный номер";
+            ws.Cells[HeaderRow, 5] = "Исполнитель";
+
+            Excel.Range headerRange = null;
+            try
+            {
+                headerRange = ws.Range[ws.Cells[HeaderRow, 1], ws.Cells[HeaderRow, ColCount]];
+                headerRange.Font.Bold = true;
+            }
+            finally
+            {
+                if (headerRange != null)
+                    Marshal.FinalReleaseComObject(headerRange);
+            }
+
+            SetActRow(ws, actNumber);
+        }
+
+        private static void EnsureStructureAndUpdateAct(Excel.Worksheet ws, string actNumber)
+        {
+            var a1 = ws.Cells[HeaderRow, 1].Text?.ToString() ?? "";
+            if (string.IsNullOrWhiteSpace(a1) || !a1.Trim().Equals("№", StringComparison.Ordinal))
+                CreateNewReportStructure(ws, actNumber);
             else
-            {
-                wb = app.Workbooks.Add();
-                ws = (Excel.Worksheet)wb.Sheets[1];
-                WriteHeaders(ws);
-                WriteActMergedRow(ws, actNumber);
-                FillDataRow(ws, RowFirstData, serialNumber, executorFio);
-                ApplyGridBorders(ws, RowFirstData);
-                wb.SaveAs(fullPath);
-            }
+                SetActRow(ws, actNumber);
         }
-        finally
+
+        private static void SetActRow(Excel.Worksheet ws, string actNumber)
         {
-            if (ws != null)
+            Excel.Range actRange = null;
+            try
             {
-                Marshal.FinalReleaseComObject(ws);
-                ws = null;
-            }
-
-            if (wb != null)
-            {
-                wb.Close(SaveChanges: true);
-                Marshal.FinalReleaseComObject(wb);
-                wb = null;
-            }
-
-            if (app != null)
-            {
-                app.Quit();
-                Marshal.FinalReleaseComObject(app);
-                app = null;
-            }
-
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-        }
-    }
-
-    /// <summary>Строка 2: A–E объединены, текст «№ Акта: …».</summary>
-    private static void WriteActMergedRow(Excel.Worksheet ws, string actNumber)
-    {
-        UnmergeRow2IfNeeded(ws);
-
-        Excel.Range? mergeRange = null;
-        try
-        {
-            var topLeft = (Excel.Range)ws.Cells[RowAct, 1];
-            var bottomRight = (Excel.Range)ws.Cells[RowAct, LastCol];
-            mergeRange = ws.Range[topLeft, bottomRight];
-            Marshal.FinalReleaseComObject(topLeft);
-            Marshal.FinalReleaseComObject(bottomRight);
-
-            mergeRange.Merge(false);
-            mergeRange.Value2 = "№ Акта: " + actNumber;
-            mergeRange.HorizontalAlignment = Excel.XlHAlign.xlHAlignLeft;
-            mergeRange.VerticalAlignment = Excel.XlVAlign.xlVAlignCenter;
-        }
-        finally
-        {
-            if (mergeRange != null)
-                Marshal.FinalReleaseComObject(mergeRange);
-        }
-    }
-
-    private static void UnmergeRow2IfNeeded(Excel.Worksheet ws)
-    {
-        Excel.Range? c = null;
-        try
-        {
-            c = (Excel.Range)ws.Cells[RowAct, 1];
-            if (true.Equals(c.MergeCells))
-            {
-                Excel.Range? area = null;
+                actRange = ws.Range[ws.Cells[ActRow, 1], ws.Cells[ActRow, ColCount]];
                 try
                 {
-                    area = c.MergeArea;
-                    area.UnMerge();
+                    if (Convert.ToBoolean(actRange.MergeCells))
+                        actRange.UnMerge();
+                }
+                catch
+                {
+                    /* ignore */
+                }
+                actRange.Merge();
+                actRange.HorizontalAlignment = Excel.XlHAlign.xlHAlignCenter;
+                actRange.Value2 = "№ акта: " + (actNumber ?? "");
+            }
+            finally
+            {
+                if (actRange != null)
+                    Marshal.FinalReleaseComObject(actRange);
+            }
+        }
+
+        private static int FindNextDataRow(Excel.Worksheet ws)
+        {
+            const int maxScan = 100000;
+            for (int r = FirstDataRow; r < FirstDataRow + maxScan; r++)
+            {
+                var v1 = ws.Cells[r, 1].Value2;
+                var v2 = ws.Cells[r, 2].Value2;
+                if (v1 == null && v2 == null)
+                    return r;
+            }
+            return FirstDataRow + maxScan;
+        }
+
+        private static int GetNextOperationNumber(Excel.Worksheet ws, int nextRow)
+        {
+            int max = 0;
+            for (int r = FirstDataRow; r < nextRow; r++)
+            {
+                var v = ws.Cells[r, 1].Value2;
+                if (v == null) continue;
+                int n;
+                if (v is double d)
+                    n = (int)d;
+                else if (!int.TryParse(Convert.ToString(v, CultureInfo.InvariantCulture), out n))
+                    continue;
+                if (n > max) max = n;
+            }
+            return max + 1;
+        }
+
+        /// <summary>
+        /// Все границы таблицы: внешний контур и внутренние линии (как сетка).
+        /// </summary>
+        private static void ApplyTableGridBorders(Excel.Worksheet ws, int lastRow)
+        {
+            if (lastRow < HeaderRow)
+                return;
+
+            Excel.Range tableRange = null;
+            try
+            {
+                tableRange = ws.Range[ws.Cells[HeaderRow, 1], ws.Cells[lastRow, ColCount]];
+                Excel.Borders borders = tableRange.Borders;
+                try
+                {
+                    var indices = new[]
+                    {
+                        Excel.XlBordersIndex.xlEdgeLeft,
+                        Excel.XlBordersIndex.xlEdgeTop,
+                        Excel.XlBordersIndex.xlEdgeBottom,
+                        Excel.XlBordersIndex.xlEdgeRight,
+                        Excel.XlBordersIndex.xlInsideVertical,
+                        Excel.XlBordersIndex.xlInsideHorizontal
+                    };
+                    foreach (Excel.XlBordersIndex idx in indices)
+                    {
+                        Excel.Border side = borders[idx];
+                        try
+                        {
+                            side.LineStyle = Excel.XlLineStyle.xlContinuous;
+                            side.Weight = Excel.XlBorderWeight.xlThin;
+                        }
+                        finally
+                        {
+                            Marshal.FinalReleaseComObject(side);
+                        }
+                    }
                 }
                 finally
                 {
-                    if (area != null)
-                        Marshal.FinalReleaseComObject(area);
+                    Marshal.FinalReleaseComObject(borders);
                 }
             }
-        }
-        finally
-        {
-            if (c != null)
-                Marshal.FinalReleaseComObject(c);
-        }
-    }
-
-    /// <summary>Колонка «№» — порядковый номер записи 1, 2, 3… (строки 1–2 не считаются).</summary>
-    private static void FillDataRow(Excel.Worksheet ws, int row, string serialNumber, string executorFio)
-    {
-        int seq = row - RowAct;
-        var cellNo = (Excel.Range)ws.Cells[row, 1];
-        try
-        {
-            cellNo.Value2 = seq;
-            cellNo.NumberFormat = "0";
-        }
-        finally
-        {
-            Marshal.FinalReleaseComObject(cellNo);
-        }
-
-        ws.Cells[row, 2] = DateTime.Now.ToString("dd.MM.yyyy HH:mm:ss");
-        ws.Cells[row, 3] = Manufacturer;
-        ws.Cells[row, 4] = serialNumber;
-        ws.Cells[row, 5] = executorFio;
-    }
-
-    private static void ApplyGridBorders(Excel.Worksheet ws, int lastDataRow)
-    {
-        if (lastDataRow < RowHeader) return;
-
-        Excel.Range? topLeft = null;
-        Excel.Range? bottomRight = null;
-        Excel.Range? tableRange = null;
-
-        try
-        {
-            topLeft = (Excel.Range)ws.Cells[RowHeader, 1];
-            bottomRight = (Excel.Range)ws.Cells[lastDataRow, LastCol];
-            tableRange = ws.Range[topLeft, bottomRight];
-
-            Excel.XlBordersIndex[] edges =
-            [
-                Excel.XlBordersIndex.xlEdgeLeft,
-                Excel.XlBordersIndex.xlEdgeTop,
-                Excel.XlBordersIndex.xlEdgeBottom,
-                Excel.XlBordersIndex.xlEdgeRight,
-                Excel.XlBordersIndex.xlInsideVertical,
-                Excel.XlBordersIndex.xlInsideHorizontal
-            ];
-
-            foreach (var bi in edges)
+            finally
             {
-                Excel.Border? b = null;
-                try
-                {
-                    b = tableRange.Borders[bi];
-                    b.LineStyle = Excel.XlLineStyle.xlContinuous;
-                    b.Weight = Excel.XlBorderWeight.xlThin;
-                    b.ColorIndex = Excel.XlColorIndex.xlColorIndexAutomatic;
-                }
-                finally
-                {
-                    if (b != null)
-                        Marshal.FinalReleaseComObject(b);
-                }
+                if (tableRange != null)
+                    Marshal.FinalReleaseComObject(tableRange);
             }
-        }
-        finally
-        {
-            if (tableRange != null)
-                Marshal.FinalReleaseComObject(tableRange);
-            if (bottomRight != null)
-                Marshal.FinalReleaseComObject(bottomRight);
-            if (topLeft != null)
-                Marshal.FinalReleaseComObject(topLeft);
-        }
-    }
-
-    private static void WriteHeaders(Excel.Worksheet ws)
-    {
-        ws.Cells[1, 1] = "№";
-        ws.Cells[1, 2] = "Дата";
-        ws.Cells[1, 3] = "Производитель";
-        ws.Cells[1, 4] = "Серийный номер";
-        ws.Cells[1, 5] = "Исполнитель";
-    }
-
-    private static void EnsureHeaders(Excel.Worksheet ws)
-    {
-        Excel.Range? c = null;
-        try
-        {
-            c = (Excel.Range)ws.Cells[1, 1];
-            var h1 = Convert.ToString(c.Value2) ?? "";
-            if (!h1.Trim().Equals("№", StringComparison.Ordinal))
-                WriteHeaders(ws);
-        }
-        finally
-        {
-            if (c != null)
-                Marshal.FinalReleaseComObject(c);
-        }
-    }
-
-    /// <summary>Следующая свободная строка данных (не раньше 3-й).</summary>
-    private static int GetNextDataRow(Excel.Worksheet ws)
-    {
-        Excel.Range? bottom = null;
-        Excel.Range? last = null;
-        try
-        {
-            bottom = (Excel.Range)ws.Cells[ExcelLastRow, 1];
-            last = bottom.End[Excel.XlDirection.xlUp];
-            int r = last.Row;
-            if (r < RowFirstData)
-                return RowFirstData;
-            return r + 1;
-        }
-        finally
-        {
-            if (last != null) Marshal.FinalReleaseComObject(last);
-            if (bottom != null) Marshal.FinalReleaseComObject(bottom);
         }
     }
 }

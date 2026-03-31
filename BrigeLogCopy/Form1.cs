@@ -1,128 +1,135 @@
-using System.Runtime.InteropServices;
-using System.Text;
+using System;
+using System.Configuration;
+using System.IO;
+using System.Threading.Tasks;
+using System.Windows.Forms;
 
-namespace BrigeLogCopy;
-
-public partial class Form1 : Form
+namespace BrigeLogCopy
 {
-    public Form1()
+    public partial class Form1 : Form
     {
-        InitializeComponent();
-    }
-
-    private void btnPath_Click(object sender, EventArgs e)
-    {
-        using var fbd = new FolderBrowserDialog
+        public Form1()
         {
-            Description = "Выберите папку для Excel-отчёта и папок с логами",
-            UseDescriptionForTitle = true
-        };
-        if (!string.IsNullOrWhiteSpace(tbFilePath.Text) && Directory.Exists(tbFilePath.Text))
-            fbd.SelectedPath = tbFilePath.Text;
-
-        if (fbd.ShowDialog(this) == DialogResult.OK)
-            tbFilePath.Text = fbd.SelectedPath;
-    }
-
-    private async void btnSaveLog_Click(object sender, EventArgs e)
-    {
-        if (string.IsNullOrWhiteSpace(tbFIO.Text))
-        {
-            MessageBox.Show(this, "Укажите ФИО исполнителя.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            tbFIO.Focus();
-            return;
+            InitializeComponent();
         }
 
-        if (string.IsNullOrWhiteSpace(tbAKT.Text))
+        private void Form1_Load(object sender, EventArgs e)
         {
-            MessageBox.Show(this, "Укажите № акта.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            tbAKT.Focus();
-            return;
+            var url = ConfigurationManager.AppSettings["BridgeBaseUrl"];
+            if (string.IsNullOrWhiteSpace(url))
+                url = "http://192.168.2.1";
+            labelBridgeUrl.Text = "Адрес моста (App.config → BridgeBaseUrl): " + url;
         }
 
-        if (string.IsNullOrWhiteSpace(tbSerialNumber.Text))
+        private void btnBrowseFolder_Click(object sender, EventArgs e)
         {
-            MessageBox.Show(this, "Укажите серийный номер.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            tbSerialNumber.Focus();
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(tbFilePath.Text) || !Directory.Exists(tbFilePath.Text))
-        {
-            MessageBox.Show(this, "Укажите существующую папку для сохранения (кнопка «Выбрать»).", Text,
-                MessageBoxButtons.OK, MessageBoxIcon.Warning);
-            tbFilePath.Focus();
-            return;
-        }
-
-        UseWaitCursor = true;
-        btnSaveLog.Enabled = false;
-        try
-        {
-            var baseUrl = BridgeHttpClient.DefaultBaseUrl;
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(50));
-
-            var unifiedTask = BridgeHttpClient.GetTextAsync(baseUrl, "/api/log/file", cts.Token);
-            var jsonTask = BridgeHttpClient.GetTextAsync(baseUrl, "/api/log", cts.Token);
-            await Task.WhenAll(unifiedTask, jsonTask).ConfigureAwait(true);
-
-            var (okU, unified, errU) = await unifiedTask.ConfigureAwait(true);
-            var (okJ, json, errJ) = await jsonTask.ConfigureAwait(true);
-
-            if (!okU || !okJ)
+            using (var dlg = new FolderBrowserDialog())
             {
-                var msg = "Не удалось получить логи с моста.\n" +
-                          $"Адрес: {baseUrl}\n" +
-                          (!okU ? $"Единый лог: {errU}\n" : "") +
-                          (!okJ ? $"JSON: {errJ}" : "");
-                MessageBox.Show(this, msg, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                dlg.Description = "Папка для отчёта Excel и архивов логов";
+                dlg.SelectedPath = string.IsNullOrWhiteSpace(txtReportsPath.Text)
+                    ? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)
+                    : txtReportsPath.Text;
+                if (dlg.ShowDialog(this) == DialogResult.OK)
+                    txtReportsPath.Text = dlg.SelectedPath;
+            }
+        }
+
+        private async void btnSaveLogs_Click(object sender, EventArgs e)
+        {
+            string fio = txtFio.Text?.Trim() ?? "";
+            string act = txtActNumber.Text?.Trim() ?? "";
+            string serial = txtSerial.Text?.Trim() ?? "";
+            string root = txtReportsPath.Text?.Trim() ?? "";
+
+            if (fio.Length == 0)
+            {
+                MessageBox.Show(this, "Укажите ФИО сотрудника.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                txtFio.Focus();
+                return;
+            }
+            if (act.Length == 0)
+            {
+                MessageBox.Show(this, "Укажите № акта.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                txtActNumber.Focus();
+                return;
+            }
+            if (serial.Length == 0)
+            {
+                MessageBox.Show(this, "Укажите серийный номер.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                txtSerial.Focus();
+                return;
+            }
+            if (root.Length == 0)
+            {
+                MessageBox.Show(this, "Укажите путь к папке для отчётов.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                txtReportsPath.Focus();
                 return;
             }
 
-            var serialFolder = Path.Combine(tbFilePath.Text.Trim(), SanitizeFolderName(tbSerialNumber.Text.Trim()));
-            Directory.CreateDirectory(serialFolder);
-
-            var unifiedPath = Path.Combine(serialFolder, $"единый_лог_{tbSerialNumber.Text}.txt");
-            var jsonPath = Path.Combine(serialFolder, $"mavlink_log_{tbSerialNumber.Text}.json");
-            await File.WriteAllTextAsync(unifiedPath, unified ?? "", Encoding.UTF8, cts.Token).ConfigureAwait(true);
-            await File.WriteAllTextAsync(jsonPath, json ?? "[]", Encoding.UTF8, cts.Token).ConfigureAwait(true);
-            
-
-            var excelPath = Path.Combine(tbFilePath.Text.Trim(), $"Отчет_Bridge_{tbAKT.Text}.xlsx");
             try
             {
-                ExcelReportHelper.AppendRow(excelPath, tbAKT.Text.Trim(), tbSerialNumber.Text.Trim(), tbFIO.Text.Trim());
+                Path.GetFullPath(root);
             }
-            catch (COMException ex)
+            catch
             {
+                MessageBox.Show(this, "Некорректный путь к папке.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            string bridgeUrl = ConfigurationManager.AppSettings["BridgeBaseUrl"];
+            if (string.IsNullOrWhiteSpace(bridgeUrl))
+                bridgeUrl = "http://192.168.2.1";
+
+            btnSaveLogs.Enabled = false;
+            btnBrowseFolder.Enabled = false;
+            UseWaitCursor = true;
+            try
+            {
+                try
+                {
+                    await LogArchiveService.SaveLogsFromBridgeAsync(bridgeUrl, root, serial).ConfigureAwait(true);
+                }
+                catch (Exception exNet)
+                {
+                    MessageBox.Show(this,
+                        "Не удалось скачать логи с моста. Проверьте Wi‑Fi, адрес в App.config и что устройство в сети.\n\n" + exNet.Message,
+                        Text,
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
+
+                try
+                {
+                    ExcelReportHelper.AppendOperationRow(
+                        ExcelReportHelper.GetReportPath(root),
+                        act,
+                        serial,
+                        fio);
+                }
+                catch (Exception exExcel)
+                {
+                    MessageBox.Show(this,
+                        "Логи сохранены в папку серийного номера, но Excel не обновлён (нужен установленный Microsoft Office):\n" + exExcel.Message,
+                        Text,
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                    return;
+                }
+
                 MessageBox.Show(this,
-                    "Ошибка Excel (Interop). Убедитесь, что установлен Microsoft Excel.\n" + ex.Message,
-                    Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
-                return;
+                    "Готово: обновлён файл «Отчет_Bridge.xlsx», логи — в подпапке «" +
+                    LogArchiveService.SanitizeFolderName(serial) + "».",
+                    Text,
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Information);
             }
-            catch (Exception ex)
+            finally
             {
-                MessageBox.Show(this, "Ошибка записи Excel: " + ex.Message, Text, MessageBoxButtons.OK,
-                    MessageBoxIcon.Error);
-                return;
+                UseWaitCursor = false;
+                btnSaveLogs.Enabled = true;
+                btnBrowseFolder.Enabled = true;
             }
-
-            MessageBox.Show(this,
-                $"Готово.\nОтчёт: {excelPath}\nЛоги: {serialFolder}",
-                Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
-        finally
-        {
-            btnSaveLog.Enabled = true;
-            UseWaitCursor = false;
-        }
-    }
-
-    private static string SanitizeFolderName(string raw)
-    {
-        var invalid = Path.GetInvalidFileNameChars();
-        var parts = raw.Split(invalid, StringSplitOptions.RemoveEmptyEntries);
-        var s = string.Join("_", parts).Trim();
-        return string.IsNullOrEmpty(s) ? "NO_SERIAL" : s;
     }
 }

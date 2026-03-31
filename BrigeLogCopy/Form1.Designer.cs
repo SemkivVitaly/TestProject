@@ -1,4 +1,3 @@
-#nullable disable
 namespace BrigeLogCopy
 {
     partial class Form1
@@ -18,161 +17,164 @@ namespace BrigeLogCopy
 
         private void InitializeComponent()
         {
-            panel1 = new Panel();
-            btnSaveLog = new Button();
-            btnPath = new Button();
-            tbFilePath = new TextBox();
-            tbSerialNumber = new TextBox();
-            tbAKT = new TextBox();
-            lbFilePath = new Label();
-            lbSerialNumber = new Label();
-            lbAKT = new Label();
-            tbFIO = new TextBox();
-            lbFIO = new Label();
-            fbd = new FolderBrowserDialog();
-            panel1.SuspendLayout();
-            SuspendLayout();
+            this.labelFio = new System.Windows.Forms.Label();
+            this.txtFio = new System.Windows.Forms.TextBox();
+            this.labelAct = new System.Windows.Forms.Label();
+            this.txtActNumber = new System.Windows.Forms.TextBox();
+            this.labelSerial = new System.Windows.Forms.Label();
+            this.txtSerial = new System.Windows.Forms.TextBox();
+            this.labelPath = new System.Windows.Forms.Label();
+            this.txtReportsPath = new System.Windows.Forms.TextBox();
+            this.btnBrowseFolder = new System.Windows.Forms.Button();
+            this.btnSaveLogs = new System.Windows.Forms.Button();
+            this.labelBridgeUrl = new System.Windows.Forms.Label();
+            this.SuspendLayout();
             // 
-            // panel1
+            // labelFio
             // 
-            panel1.Controls.Add(btnSaveLog);
-            panel1.Controls.Add(btnPath);
-            panel1.Controls.Add(tbFilePath);
-            panel1.Controls.Add(tbSerialNumber);
-            panel1.Controls.Add(tbAKT);
-            panel1.Controls.Add(lbFilePath);
-            panel1.Controls.Add(lbSerialNumber);
-            panel1.Controls.Add(lbAKT);
-            panel1.Controls.Add(tbFIO);
-            panel1.Controls.Add(lbFIO);
-            panel1.Dock = DockStyle.Fill;
-            panel1.Location = new Point(0, 0);
-            panel1.Name = "panel1";
-            panel1.Padding = new Padding(12);
-            panel1.Size = new Size(784, 261);
-            panel1.TabIndex = 0;
+            this.labelFio.AutoSize = true;
+            this.labelFio.Location = new System.Drawing.Point(18, 18);
+            this.labelFio.Name = "labelFio";
+            this.labelFio.Size = new System.Drawing.Size(120, 15);
+            this.labelFio.TabIndex = 0;
+            this.labelFio.Text = "ФИО сотрудника:";
             // 
-            // btnSaveLog
+            // txtFio
             // 
-            btnSaveLog.Location = new Point(12, 218);
-            btnSaveLog.Name = "btnSaveLog";
-            btnSaveLog.Size = new Size(280, 28);
-            btnSaveLog.TabIndex = 9;
-            btnSaveLog.Text = "Сохранить логи";
-            btnSaveLog.UseVisualStyleBackColor = true;
-            btnSaveLog.Click += btnSaveLog_Click;
+            this.txtFio.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.txtFio.Location = new System.Drawing.Point(200, 15);
+            this.txtFio.Name = "txtFio";
+            this.txtFio.Size = new System.Drawing.Size(420, 23);
+            this.txtFio.TabIndex = 1;
             // 
-            // btnPath
+            // labelAct
             // 
-            btnPath.Location = new Point(694, 149);
-            btnPath.Name = "btnPath";
-            btnPath.Size = new Size(75, 26);
-            btnPath.TabIndex = 8;
-            btnPath.Text = "Выбрать";
-            btnPath.UseVisualStyleBackColor = true;
-            btnPath.Click += btnPath_Click;
+            this.labelAct.AutoSize = true;
+            this.labelAct.Location = new System.Drawing.Point(18, 54);
+            this.labelAct.Name = "labelAct";
+            this.labelAct.Size = new System.Drawing.Size(52, 15);
+            this.labelAct.TabIndex = 2;
+            this.labelAct.Text = "№ Акта:";
             // 
-            // tbFilePath
+            // txtActNumber
             // 
-            tbFilePath.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            tbFilePath.Location = new Point(12, 152);
-            tbFilePath.Name = "tbFilePath";
-            tbFilePath.PlaceholderText = "Папка для Отчет_Bridge.xlsx и подпапок по серийнику";
-            tbFilePath.Size = new Size(676, 23);
-            tbFilePath.TabIndex = 7;
+            this.txtActNumber.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.txtActNumber.Location = new System.Drawing.Point(200, 51);
+            this.txtActNumber.Name = "txtActNumber";
+            this.txtActNumber.Size = new System.Drawing.Size(420, 23);
+            this.txtActNumber.TabIndex = 3;
             // 
-            // tbSerialNumber
+            // labelSerial
             // 
-            tbSerialNumber.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            tbSerialNumber.Location = new Point(12, 108);
-            tbSerialNumber.Name = "tbSerialNumber";
-            tbSerialNumber.PlaceholderText = "Серийный номер изделия";
-            tbSerialNumber.Size = new Size(757, 23);
-            tbSerialNumber.TabIndex = 6;
+            this.labelSerial.AutoSize = true;
+            this.labelSerial.Location = new System.Drawing.Point(18, 90);
+            this.labelSerial.Name = "labelSerial";
+            this.labelSerial.Size = new System.Drawing.Size(102, 15);
+            this.labelSerial.TabIndex = 4;
+            this.labelSerial.Text = "Серийный номер:";
             // 
-            // tbAKT
+            // txtSerial
             // 
-            tbAKT.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            tbAKT.Location = new Point(12, 64);
-            tbAKT.Name = "tbAKT";
-            tbAKT.PlaceholderText = "Номер акта";
-            tbAKT.Size = new Size(757, 23);
-            tbAKT.TabIndex = 5;
+            this.txtSerial.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.txtSerial.Location = new System.Drawing.Point(200, 87);
+            this.txtSerial.Name = "txtSerial";
+            this.txtSerial.Size = new System.Drawing.Size(420, 23);
+            this.txtSerial.TabIndex = 5;
             // 
-            // lbFilePath
+            // labelPath
             // 
-            lbFilePath.AutoSize = true;
-            lbFilePath.Location = new Point(15, 134);
-            lbFilePath.Name = "lbFilePath";
-            lbFilePath.Size = new Size(145, 15);
-            lbFilePath.TabIndex = 4;
-            lbFilePath.Text = "Путь к папке сохранения";
+            this.labelPath.AutoSize = true;
+            this.labelPath.Location = new System.Drawing.Point(18, 126);
+            this.labelPath.Name = "labelPath";
+            this.labelPath.Size = new System.Drawing.Size(168, 15);
+            this.labelPath.TabIndex = 6;
+            this.labelPath.Text = "Папка для отчёта и архивов:";
             // 
-            // lbSerialNumber
+            // txtReportsPath
             // 
-            lbSerialNumber.AutoSize = true;
-            lbSerialNumber.Location = new Point(12, 90);
-            lbSerialNumber.Name = "lbSerialNumber";
-            lbSerialNumber.Size = new Size(104, 15);
-            lbSerialNumber.TabIndex = 3;
-            lbSerialNumber.Text = "Серийный номер";
+            this.txtReportsPath.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.txtReportsPath.Location = new System.Drawing.Point(200, 123);
+            this.txtReportsPath.Name = "txtReportsPath";
+            this.txtReportsPath.Size = new System.Drawing.Size(310, 23);
+            this.txtReportsPath.TabIndex = 7;
             // 
-            // lbAKT
+            // btnBrowseFolder
             // 
-            lbAKT.AutoSize = true;
-            lbAKT.Location = new Point(12, 46);
-            lbAKT.Name = "lbAKT";
-            lbAKT.Size = new Size(48, 15);
-            lbAKT.TabIndex = 2;
-            lbAKT.Text = "№ Акта";
+            this.btnBrowseFolder.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
+            this.btnBrowseFolder.Location = new System.Drawing.Point(516, 122);
+            this.btnBrowseFolder.Name = "btnBrowseFolder";
+            this.btnBrowseFolder.Size = new System.Drawing.Size(104, 25);
+            this.btnBrowseFolder.TabIndex = 8;
+            this.btnBrowseFolder.Text = "Обзор…";
+            this.btnBrowseFolder.UseVisualStyleBackColor = true;
+            this.btnBrowseFolder.Click += new System.EventHandler(this.btnBrowseFolder_Click);
             // 
-            // tbFIO
+            // btnSaveLogs
             // 
-            tbFIO.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
-            tbFIO.Location = new Point(12, 20);
-            tbFIO.Name = "tbFIO";
-            tbFIO.PlaceholderText = "Фамилия Имя Отчество";
-            tbFIO.Size = new Size(757, 23);
-            tbFIO.TabIndex = 1;
+            this.btnSaveLogs.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.btnSaveLogs.Font = new System.Drawing.Font("Segoe UI", 10F, System.Drawing.FontStyle.Bold);
+            this.btnSaveLogs.Location = new System.Drawing.Point(18, 168);
+            this.btnSaveLogs.Name = "btnSaveLogs";
+            this.btnSaveLogs.Size = new System.Drawing.Size(602, 40);
+            this.btnSaveLogs.TabIndex = 9;
+            this.btnSaveLogs.Text = "Сохранить логи";
+            this.btnSaveLogs.UseVisualStyleBackColor = true;
+            this.btnSaveLogs.Click += new System.EventHandler(this.btnSaveLogs_Click);
             // 
-            // lbFIO
+            // labelBridgeUrl
             // 
-            lbFIO.AutoSize = true;
-            lbFIO.Location = new Point(12, 2);
-            lbFIO.Name = "lbFIO";
-            lbFIO.Size = new Size(34, 15);
-            lbFIO.TabIndex = 0;
-            lbFIO.Text = "ФИО";
+            this.labelBridgeUrl.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
+            | System.Windows.Forms.AnchorStyles.Right)));
+            this.labelBridgeUrl.ForeColor = System.Drawing.SystemColors.GrayText;
+            this.labelBridgeUrl.Location = new System.Drawing.Point(18, 220);
+            this.labelBridgeUrl.Name = "labelBridgeUrl";
+            this.labelBridgeUrl.Size = new System.Drawing.Size(602, 36);
+            this.labelBridgeUrl.TabIndex = 10;
+            this.labelBridgeUrl.Text = "Адрес моста загружается из App.config…";
             // 
             // Form1
             // 
-            AutoScaleDimensions = new SizeF(7F, 15F);
-            AutoScaleMode = AutoScaleMode.Font;
-            ClientSize = new Size(784, 261);
-            Controls.Add(panel1);
-            MinimumSize = new Size(640, 300);
-            Name = "Form1";
-            StartPosition = FormStartPosition.CenterScreen;
-            Text = "Копирование логов Bridge";
-            panel1.ResumeLayout(false);
-            panel1.PerformLayout();
-            ResumeLayout(false);
+            this.AutoScaleDimensions = new System.Drawing.SizeF(7F, 15F);
+            this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
+            this.ClientSize = new System.Drawing.Size(644, 271);
+            this.Controls.Add(this.labelBridgeUrl);
+            this.Controls.Add(this.btnSaveLogs);
+            this.Controls.Add(this.btnBrowseFolder);
+            this.Controls.Add(this.txtReportsPath);
+            this.Controls.Add(this.labelPath);
+            this.Controls.Add(this.txtSerial);
+            this.Controls.Add(this.labelSerial);
+            this.Controls.Add(this.txtActNumber);
+            this.Controls.Add(this.labelAct);
+            this.Controls.Add(this.txtFio);
+            this.Controls.Add(this.labelFio);
+            this.Font = new System.Drawing.Font("Segoe UI", 9F);
+            this.MinimumSize = new System.Drawing.Size(520, 310);
+            this.Name = "Form1";
+            this.StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
+            this.Text = "BrigeLogCopy — отчёт Bridge";
+            this.Load += new System.EventHandler(this.Form1_Load);
+            this.ResumeLayout(false);
+            this.PerformLayout();
         }
 
         #endregion
 
-        private Panel panel1;
-        private Label lbFilePath;
-        private Label lbSerialNumber;
-        private Label lbAKT;
-        private TextBox tbFIO;
-        private Label lbFIO;
-        private Button btnSaveLog;
-        private Button btnPath;
-        private TextBox tbFilePath;
-        private TextBox tbSerialNumber;
-        private TextBox tbAKT;
-        private FolderBrowserDialog fbd;
+        private System.Windows.Forms.Label labelFio;
+        private System.Windows.Forms.TextBox txtFio;
+        private System.Windows.Forms.Label labelAct;
+        private System.Windows.Forms.TextBox txtActNumber;
+        private System.Windows.Forms.Label labelSerial;
+        private System.Windows.Forms.TextBox txtSerial;
+        private System.Windows.Forms.Label labelPath;
+        private System.Windows.Forms.TextBox txtReportsPath;
+        private System.Windows.Forms.Button btnBrowseFolder;
+        private System.Windows.Forms.Button btnSaveLogs;
+        private System.Windows.Forms.Label labelBridgeUrl;
     }
 }
-#nullable restore

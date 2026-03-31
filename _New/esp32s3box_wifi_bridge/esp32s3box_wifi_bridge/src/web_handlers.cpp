@@ -112,6 +112,10 @@ static void handleRoot() {
         "<a href='/api/log'>JSON Пакеты</a>"
         "<a href='/api/log/esp32'>Лог ESP32</a>"
         "</div>"
+        "<p style='font-size:0.82rem;opacity:0.88;margin-top:1.1rem;line-height:1.45;color:#e8f4ff;'>"
+        "Приложение <b>BrigeLogCopy</b> на ПК (папка проекта на компьютере) скачивает с этого адреса "
+        "единый лог, JSON пакетов (/api/log) и статус (/api/status) в папку по серийному номеру и ведёт Excel-отчёт."
+        "</p>"
         "</div>"
         "</body></html>"
     ));
