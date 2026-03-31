@@ -1,6 +1,7 @@
 using System;
 using System.Configuration;
 using System.IO;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -15,8 +16,38 @@ namespace BrigeLogCopy
 
         private void Form1_Load(object sender, EventArgs e)
         {
-            
-            
+            gridSerials.AllowUserToAddRows = true;
+            gridSerials.AllowUserToDeleteRows = true;
+            gridSerials.MultiSelect = false;
+            gridSerials.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+        }
+
+        /// <summary>Первая строка с непустым серийным номером (не строка «новая запись»).</summary>
+        private bool TryGetFirstSerialRow(out int rowIndex, out string serial)
+        {
+            rowIndex = -1;
+            serial = null;
+            foreach (DataGridViewRow row in gridSerials.Rows)
+            {
+                if (row.IsNewRow)
+                    continue;
+                string s = row.Cells[colSerial.Index].Value?.ToString()?.Trim() ?? "";
+                if (s.Length == 0)
+                    continue;
+                rowIndex = row.Index;
+                serial = s;
+                return true;
+            }
+            return false;
+        }
+
+        private void RemoveRowAt(int index)
+        {
+            if (index < 0 || index >= gridSerials.Rows.Count)
+                return;
+            if (gridSerials.Rows[index].IsNewRow)
+                return;
+            gridSerials.Rows.RemoveAt(index);
         }
 
         private void btnBrowseFolder_Click(object sender, EventArgs e)
@@ -36,7 +67,6 @@ namespace BrigeLogCopy
         {
             string fio = txtFio.Text?.Trim() ?? "";
             string act = txtActNumber.Text?.Trim() ?? "";
-            string serial = txtSerial.Text?.Trim() ?? "";
             string root = txtReportsPath.Text?.Trim() ?? "";
 
             if (fio.Length == 0)
@@ -51,10 +81,10 @@ namespace BrigeLogCopy
                 txtActNumber.Focus();
                 return;
             }
-            if (serial.Length == 0)
+            if (!TryGetFirstSerialRow(out int serialRowIndex, out string serial))
             {
-                MessageBox.Show(this, "Укажите серийный номер.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                txtSerial.Focus();
+                MessageBox.Show(this, "Добавьте в таблицу хотя бы один серийный номер (первая заполненная строка сверху).", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                gridSerials.Focus();
                 return;
             }
             if (root.Length == 0)
@@ -79,27 +109,59 @@ namespace BrigeLogCopy
             string actRoot = Path.Combine(rootFull, actFolderName);
             Directory.CreateDirectory(actRoot);
 
+            string reportPath = ExcelReportHelper.GetReportPath(actRoot);
+            bool dupFolder = LogArchiveService.SerialFolderHasSavedContent(actRoot, serial);
+            bool dupExcel = false;
+            string excelCheckError = null;
+            try
+            {
+                dupExcel = ExcelReportHelper.SerialExistsInReport(reportPath, serial);
+            }
+            catch (Exception ex)
+            {
+                excelCheckError = ex.Message;
+            }
+
+            if (dupFolder || dupExcel || excelCheckError != null)
+            {
+                var sb = new StringBuilder();
+                if (dupFolder)
+                    sb.AppendLine("• Папка для этого серийного номера уже содержит сохранённые файлы логов.");
+                if (dupExcel)
+                    sb.AppendLine("• Этот серийный номер уже есть в столбце «Серийный номер» в «Отчет_Bridge.xlsx».");
+                if (excelCheckError != null)
+                    sb.AppendLine("• Не удалось проверить Excel: " + excelCheckError);
+                sb.AppendLine();
+                sb.AppendLine("Продолжить сохранение?");
+                var ask = MessageBox.Show(this, sb.ToString(), Text, MessageBoxButtons.YesNo, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button2);
+                if (ask != DialogResult.Yes)
+                    return;
+            }
+
             string bridgeUrl = ConfigurationManager.AppSettings["BridgeBaseUrl"];
             if (string.IsNullOrWhiteSpace(bridgeUrl))
                 bridgeUrl = "http://192.168.2.1";
 
             btnSaveLogs.Enabled = false;
             btnBrowseFolder.Enabled = false;
+            gridSerials.Enabled = false;
             UseWaitCursor = true;
             try
             {
+                bool logsOk = false;
                 try
                 {
                     await LogArchiveService.SaveLogsFromBridgeAsync(bridgeUrl, actRoot, serial).ConfigureAwait(true);
+                    logsOk = true;
                 }
                 catch (Exception exNet)
                 {
                     MessageBox.Show(this,
-                        "Не удалось скачать логи с моста. Проверьте Wi‑Fi, адрес в App.config и что устройство в сети.\n\n" + exNet.Message,
+                        "Не удалось скачать логи с моста (Wi‑Fi, App.config, доступность устройства).\n" +
+                        "Отчёт Excel всё равно будет создан или дополнен.\n\n" + exNet.Message,
                         Text,
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Warning);
-                    return;
                 }
 
                 try
@@ -113,16 +175,27 @@ namespace BrigeLogCopy
                 catch (Exception exExcel)
                 {
                     MessageBox.Show(this,
-                        "Логи сохранены в папку серийного номера, но Excel не обновлён (нужен установленный Microsoft Office):\n" + exExcel.Message,
+                        "Не удалось обновить Excel (нужен Microsoft Office).\n" +
+                        (logsOk ? "Логи с моста при этом сохранены в папку серийного номера.\n" : "") +
+                        "Строка в таблице очереди не удалена — можно повторить попытку.\n\n" + exExcel.Message,
                         Text,
                         MessageBoxButtons.OK,
-                        MessageBoxIcon.Warning);
+                        MessageBoxIcon.Error);
                     return;
                 }
 
+                RemoveRowAt(serialRowIndex);
+
+                int remaining = CountDataRows();
+                string reportPathDone = ExcelReportHelper.GetReportPath(actRoot);
+                string logsNote = logsOk
+                    ? "Логи с моста сохранены в папку серийного номера."
+                    : "Логи с моста не сохранены — при необходимости повторите операцию после настройки сети.";
                 MessageBox.Show(this,
-                    "Готово. Папка акта: «" + actFolderName + "»\n«Отчет_Bridge.xlsx» и подпапка логов «" +
-                    LogArchiveService.SanitizeFolderName(serial) + "».",
+                    "Готово. Серийный номер: «" + serial + "».\nПапка акта: «" + actFolderName + "».\n" +
+                    logsNote + "\n" +
+                    "Отчёт Excel:\n" + reportPathDone + "\n" +
+                    "В очереди осталось записей: " + remaining + ".",
                     Text,
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Information);
@@ -130,9 +203,24 @@ namespace BrigeLogCopy
             finally
             {
                 UseWaitCursor = false;
+                gridSerials.Enabled = true;
                 btnSaveLogs.Enabled = true;
                 btnBrowseFolder.Enabled = true;
             }
+        }
+
+        private int CountDataRows()
+        {
+            int n = 0;
+            foreach (DataGridViewRow row in gridSerials.Rows)
+            {
+                if (row.IsNewRow)
+                    continue;
+                string s = row.Cells[colSerial.Index].Value?.ToString()?.Trim() ?? "";
+                if (s.Length > 0)
+                    n++;
+            }
+            return n;
         }
     }
 }

@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -39,6 +40,17 @@ namespace BrigeLogCopy
 
             string mavlinkJson = await BridgeLogClient.DownloadMavlinkLogJsonAsync(bridgeBaseUrl).ConfigureAwait(false);
             File.WriteAllText(Path.Combine(targetDir, "mavlink_log_" + stamp + ".json"), mavlinkJson, new UTF8Encoding(false));
+        }
+
+        /// <summary>
+        /// Папка серийного номера внутри папки акта существует и в ней уже есть файлы (раньше сохраняли логи).
+        /// </summary>
+        public static bool SerialFolderHasSavedContent(string actFolderPath, string serialRaw)
+        {
+            string path = Path.Combine(actFolderPath.Trim(), SanitizeFolderName(serialRaw));
+            if (!Directory.Exists(path))
+                return false;
+            return Directory.EnumerateFileSystemEntries(path).Any();
         }
     }
 }

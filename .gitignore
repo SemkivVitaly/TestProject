@@ -7,7 +7,7 @@ _New/esp32s3box_wifi_bridge/esp32s3box_wifi_bridge/.git
 **/.pio/
 *.dblite
 
-# BrigeLogCopy (.NET): obj/.vs не в репо; bin/Debug — отслеживаем (готовый exe в репозитории).
+
 BrigeLogCopy/obj/
 BrigeLogCopy/.vs/
 BrigeLogCopy/packages/
