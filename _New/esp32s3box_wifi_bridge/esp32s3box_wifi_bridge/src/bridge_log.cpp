@@ -1,19 +1,31 @@
 /**
  * bridge_log.cpp — формирование единого текстового лога для скачивания (/api/log/file).
  *
- * Хранит: уникальный ID (MAC), флаг подключения MAVLink, счётчики пакетов, RSSI, температура кристалла,
+ * Хранит: уникальный ID чипа (eFuse), флаг подключения MAVLink, счётчики пакетов, RSSI, температура кристалла,
  * образцы последнего RX/TX (hex), последние записи из mavlinkLog и espLog.
  * bridgeLogGetText() собирает всё в один буфер для ответа HTTP.
+ *
+ * ИДЕНТИФИКАЦИЯ УСТРОЙСТВА:
+ *   Предпочитается ESP_EFUSE_OPTIONAL_UNIQUE_ID — 128-битный заводской серийник чипа ESP32-S2/S3/C3/C6.
+ *   Это настоящий неизменяемый die-ID, в отличие от WiFi MAC, который можно переписать программно
+ *   (esp_base_mac_addr_set). Фолбэк — ESP.getEfuseMac() (64-битный заводской base MAC из eFuse).
  */
 #include "bridge_log.h"
 #include "esp_log.h"
 #include "mavlink_state.h"
 #include "config.h"
 #include <Arduino.h>
-#include <WiFi.h>
 #include <cmath>
 #include <stdio.h>
 #include <string.h>
+#include <esp_system.h>
+#include <esp_efuse.h>
+#if __has_include(<esp_efuse_chip.h>)
+#  include <esp_efuse_chip.h>
+#endif
+#if __has_include(<esp_efuse_table.h>)
+#  include <esp_efuse_table.h>
+#endif
 
 #define SAMPLE_MAX 64          /* Макс. байт в образце RX/TX. */
 #define HEX_LINE 16
@@ -21,8 +33,8 @@
 #define LAST_UART_ERROR_LEN 32
 #define MAVLINK_LOG_TAIL 20    /* Сколько последних записей MAVLink выводить в лог. */
 
-/* OPTIONAL_ + MAC "AA:BB:CC:DD:EE:FF" = 26 + NUL → минимум 27 байт. */
-static char s_uniqueId[48];
+/* "UID:XXXXXXXX-XXXXXXXX-XXXXXXXX-XXXXXXXX" = 39 + NUL; с запасом 64. */
+static char s_uniqueId[64];
 static bool s_connected = false;
 static uint32_t s_sent = 0, s_received = 0, s_lost = 0, s_total = 0;
 static int8_t s_rssi = 0;
@@ -33,13 +45,43 @@ static bool s_idDone = false;
 static char s_lastError[LAST_ERROR_LEN] = "";
 static char s_lastUartError[LAST_UART_ERROR_LEN] = "none";
 
-/** Формирует уникальный ID из MAC один раз и кэширует в s_uniqueId. */
+/**
+ * Формирует уникальный ID чипа один раз и кэширует. Приоритет:
+ *   1) ESP_EFUSE_OPTIONAL_UNIQUE_ID — 128-битный заводской die-ID (S2/S3/C3/C6). Истинная "UnicID".
+ *   2) ESP.getEfuseMac() — 64-битный заводской base MAC (всегда доступен, неизменяем).
+ *
+ * WiFi.macAddress() НЕ используется — он может быть переписан esp_base_mac_addr_set() и
+ * не гарантирует соответствие физическому чипу.
+ */
 static void ensureUniqueId(void) {
     if (s_idDone) return;
     s_idDone = true;
-    /* MAC уникален для устройства; без ESP.h для совместимости с IntelliSense. */
-    String mac = WiFi.macAddress();
-    snprintf(s_uniqueId, sizeof(s_uniqueId), "OPTIONAL_%s", mac.c_str());
+
+#if defined(ESP_EFUSE_OPTIONAL_UNIQUE_ID)
+    {
+        uint8_t uid[16] = {0};
+        esp_err_t err = esp_efuse_read_field_blob(ESP_EFUSE_OPTIONAL_UNIQUE_ID, uid, 128);
+        bool nonZero = false;
+        for (int i = 0; i < 16; i++) { if (uid[i] != 0) { nonZero = true; break; } }
+        if (err == ESP_OK && nonZero) {
+            snprintf(s_uniqueId, sizeof(s_uniqueId),
+                     "UID:%02X%02X%02X%02X-%02X%02X%02X%02X-%02X%02X%02X%02X-%02X%02X%02X%02X",
+                     uid[0], uid[1], uid[2],  uid[3],  uid[4],  uid[5],  uid[6],  uid[7],
+                     uid[8], uid[9], uid[10], uid[11], uid[12], uid[13], uid[14], uid[15]);
+            return;
+        }
+    }
+#endif
+
+    /* Фолбэк: заводской base MAC из eFuse (не подвержен программным изменениям). */
+    uint64_t mac64 = ESP.getEfuseMac();
+    uint8_t m[6] = {
+        (uint8_t)(mac64 >> 40), (uint8_t)(mac64 >> 32),
+        (uint8_t)(mac64 >> 24), (uint8_t)(mac64 >> 16),
+        (uint8_t)(mac64 >>  8), (uint8_t)(mac64 >>  0),
+    };
+    snprintf(s_uniqueId, sizeof(s_uniqueId), "MAC:%02X%02X%02X%02X%02X%02X",
+             m[0], m[1], m[2], m[3], m[4], m[5]);
 }
 
 void bridgeLogGetUniqueId(char* buf, size_t bufSize) {

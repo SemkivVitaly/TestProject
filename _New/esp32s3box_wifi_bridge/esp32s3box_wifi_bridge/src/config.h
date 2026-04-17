@@ -78,7 +78,7 @@
 /* Размер буфера для чтения/записи порциями из UART и сети (байт). */
 #define BUFFERSIZE 2048
 /* Строка версии: показывается при загрузке и в веб-интерфейсе. */
-#define VERSION "2.0-ESP32S3"
+#define VERSION "2.1-ESP32S3-async"
 
 /* ========== Веб-интерфейс и пины ========== */
 /* Включить веб-сервер: страницы /, /params, /bridge и API /api/*. */
@@ -104,6 +104,64 @@
 #define MAVLINK_LOG_ENTRY_LEN 80
 /* Если столько мс не было HEARTBEAT от автопилота — считаем связь потерянной. */
 #define MAVLINK_HEARTBEAT_TIMEOUT_MS 5000
+
+/* ========== UART-task и асинхронный мост ========== */
+/* Размер аппаратного RX-буфера UART: при ATTITUDE@50Гц + GPS@5Гц нужен запас на всплески. */
+#define UART_RX_BUF_SIZE          16384
+/* Размер TX-буфера UART: данные от нескольких TCP-клиентов могут прийти одновременно. */
+#define UART_TX_BUF_SIZE          8192
+/* Размер стека FreeRTOS-task для UART: парсинг MAVLink + отправка в stream-буферы. */
+#define UART_TASK_STACK           8192
+/* Приоритет UART-task: выше loopTask(=1), ниже wifi(=23) — чтобы не пропускать HEARTBEAT. */
+#define UART_TASK_PRIORITY        5
+/* Ядро для UART-task: 1 (user), core 0 занят wifi/lwip и AsyncTCP (CONFIG_ASYNC_TCP_RUNNING_CORE=0). */
+#define UART_TASK_CORE            1
+/* Стрим-буфер на каждого TCP-клиента для данных, идущих в сеть (8 КБ = ~0.5 c при 128 кбит/с). */
+#define TCP_SLOT_TX_BUFFER        8192
+/* Минимум свободного окна TCP перед попыткой записи (если меньше — копим дальше). */
+#define TCP_CLIENT_SPACE_MIN      64
+/* Таймаут UDP-клиента (мс): если давно не было пакетов — забываем, чтобы не слать в никуда. */
+#define UDP_CLIENT_TIMEOUT_MS     120000
+/* Период flush-а стрим-буферов клиентам (мс) — на случай, если onAck/onPoll редки. */
+#define TCP_FLUSH_INTERVAL_MS     20
+
+/* ========== STA reconnect FSM ========== */
+/* Пауза перед попыткой переподключения (мс). */
+#define STA_RECONNECT_PERIOD_MS     3000
+/* Сколько подряд неудач → hard radio reset (WIFI_OFF/ON). */
+#define STA_RECONNECT_MAX_FAILS     10
+/* После стольких мс без успеха — ESP.restart() (записав причину в RTC). */
+#define STA_RECONNECT_HARD_RESET_MS 180000
+
+/* ========== Термо-контроль ========== */
+/* Порог включения троттлинга TX power (°C). */
+#define THERMAL_THROTTLE_HIGH_C   80.0f
+/* Порог выключения троттлинга (гистерезис). */
+#define THERMAL_THROTTLE_LOW_C    72.0f
+/* Пониженная мощность в троттле (шаг 0.25 dBm; 52 ≈ 13 dBm). */
+#define THERMAL_THROTTLE_TX_POWER 52
+/* Период опроса температуры (мс). */
+#define THERMAL_TICK_MS           5000
+
+/* ========== Heap / диагностика ========== */
+/* Период вывода лога о heap (мс). */
+#define HEAP_LOG_INTERVAL_MS      60000
+/* Если largest_free_block < этого значения — пишем WARN (фрагментация). */
+#define HEAP_FRAG_WARN_BYTES      20000
+
+/* ========== RSSI history ========== */
+/* Сколько последних отсчётов RSSI храним (1 отсчёт/с → окно 60 с). */
+#define RSSI_HISTORY_LEN          60
+/* Период опроса RSSI (мс). */
+#define RSSI_TICK_MS              1000
+
+/* ========== Watchdog ========== */
+/* Таймаут WDT для loop()/uart-task (с). */
+#define WDT_TIMEOUT_S             10
+
+/* ========== Веб-интерфейс ========== */
+/* Минимальный период обновления веб-UI (мс): снижаем частоту опроса, чтобы не фрагментировать heap. */
+#define WEB_POLL_MIN_MS           2000
 
 /* ========== Отладка ========== */
 /* DEBUG включён: debug — это Serial, все debug.print() выводятся в порт. */

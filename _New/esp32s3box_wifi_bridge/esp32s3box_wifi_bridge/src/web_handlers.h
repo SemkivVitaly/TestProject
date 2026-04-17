@@ -1,10 +1,8 @@
 /**
- * web_handlers.h — объявление инициализации веб-сервера (обработчики маршрутов).
+ * web_handlers.h — асинхронный веб-сервер и его инициализация.
  *
- * КТО ВЫЗЫВАЕТ:
- *   — main.cpp в setup() при определённом WEB_SERVER вызывает webSetup(webServer).
- *   webSetup() регистрирует все маршруты (/, /params, /api/status, /api/settings и т.д.)
- *   и привязывает их к функциям в web_handlers.cpp. Обработка запросов — в loop() через webServer.handleClient().
+ * Вся регистрация маршрутов — в webSetup(). Контекст: AsyncWebServer работает в async_tcp task (core 0).
+ * Никаких блокирующих операций в хендлерах: JSON собираем в char[], большие тексты стримим чанками.
  */
 #ifndef WEB_HANDLERS_H
 #define WEB_HANDLERS_H
@@ -12,10 +10,18 @@
 #include "config.h"
 
 #ifdef WEB_SERVER
-#include <WebServer.h>
 
-/** Регистрирует все HTTP-маршруты на переданном WebServer и вызывает server.begin(). Вызывать из setup() после LittleFS.begin(). */
-void webSetup(WebServer& server);
+#ifdef __cplusplus
+extern "C" {
 #endif
 
+/** Создать и запустить AsyncWebServer с зарегистрированными маршрутами. Вызывать ОДИН раз из setup(). */
+void webSetup(void);
+
+#ifdef __cplusplus
+}
 #endif
+
+#endif /* WEB_SERVER */
+
+#endif /* WEB_HANDLERS_H */

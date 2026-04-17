@@ -16,7 +16,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-void bridgeLogGetUniqueId(char* buf, size_t bufSize);   /* Уникальный ID (на основе MAC). */
+void bridgeLogGetUniqueId(char* buf, size_t bufSize);   /* Уникальный ID чипа: eFuse OPTIONAL_UNIQUE_ID или заводской MAC. */
 void bridgeLogSetConnected(bool connected);              /* Отметить подключение/отключение MAVLink. */
 void bridgeLogUpdateStats(uint32_t sent, uint32_t received, uint32_t lost, uint32_t total);  /* Обновить счётчики пакетов. */
 void bridgeLogUpdateRssi(int8_t rssi_dbm);              /* Обновить уровень сигнала Wi‑Fi (dBm). */

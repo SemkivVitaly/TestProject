@@ -390,13 +390,29 @@ static const char BRIDGE_UI_HTML[] PROGMEM = R"BRIDGE_UI_RAW(<!DOCTYPE html>
     }
     while (get_settings() < 0) {
     }
-    setInterval(get_stats, 500)
-    setInterval(update_conn_status, 500)
-    setInterval(check_for_issues, 500)
-    setInterval(function(){fetch("/api/link").then(function(r){return r.json();}).then(function(j){var el=document.getElementById("link_metrics");if(el)el.innerHTML="Пакеты: приём "+j.packets_received+" отпр "+j.packets_sent+" | С последн. HEARTBEAT: "+(j.connected?j.heartbeat_age_ms+" мс":"-")+" | Период HB: "+(j.heartbeat_interval_ms||"-")+" мс | Потери: "+j.packet_drops+" ("+j.packet_loss_pct+"%)";}).catch(function(){});}, 500)
-    setTimeout(change_msp_ltm_visibility, 500)
-    setTimeout(change_ap_ip_visibility, 500)
-    setTimeout(change_uart_visibility, 500)
+    setInterval(function(){ if(!document.hidden) get_stats(); }, 2000);
+    setInterval(function(){ if(!document.hidden) update_conn_status(); }, 2000);
+    setInterval(function(){ if(!document.hidden) check_for_issues(); }, 2000);
+    setInterval(function(){
+      if(document.hidden) return;
+      var c=new AbortController();var to=setTimeout(function(){c.abort();},1800);
+      fetch("/api/link",{signal:c.signal}).then(function(r){return r.json();}).then(function(j){
+        clearTimeout(to);
+        var el=document.getElementById("link_metrics");
+        if(!el) return;
+        var lossPct=(j.packet_loss_pct!=null?(j.packet_loss_pct.toFixed?j.packet_loss_pct.toFixed(2):j.packet_loss_pct):0);
+        el.innerHTML=
+          "MAVLink RX: "+(j.packets_received||0)+" пкт"+
+          " | Потери (seq-gap): "+(j.packet_drops||0)+" ("+lossPct+"%)"+
+          " | Parse err: "+(j.mavlink_parse_err||0)+
+          "<br>Bridge TX: "+(j.packets_sent||0)+" пкт"+
+          " | Период HB: "+(j.heartbeat_interval_ms||"—")+" мс"+
+          " | С последн. HEARTBEAT: "+(j.connected?(j.heartbeat_age_ms+" мс"):"—");
+      }).catch(function(){clearTimeout(to);});
+    }, 2000);
+    setTimeout(change_msp_ltm_visibility, 500);
+    setTimeout(change_ap_ip_visibility, 500);
+    setTimeout(change_uart_visibility, 500);
 </script>
 </body>
 </html>

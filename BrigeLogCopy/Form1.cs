@@ -148,17 +148,30 @@ namespace BrigeLogCopy
             UseWaitCursor = true;
             try
             {
-                bool logsOk = false;
+                LogArchiveService.SnapshotResult snap = null;
                 try
                 {
-                    await LogArchiveService.SaveLogsFromBridgeAsync(bridgeUrl, actRoot, serial).ConfigureAwait(true);
-                    logsOk = true;
+                    snap = await LogArchiveService.SaveLogsFromBridgeAsync(bridgeUrl, actRoot, serial).ConfigureAwait(true);
                 }
                 catch (Exception exNet)
                 {
                     MessageBox.Show(this,
-                        "Не удалось скачать логи с моста (Wi‑Fi, App.config, доступность устройства).\n" +
+                        "Не удалось инициировать загрузку логов с моста (Wi‑Fi, App.config, доступность устройства).\n" +
                         "Отчёт Excel всё равно будет создан или дополнен.\n\n" + exNet.Message,
+                        Text,
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Warning);
+                }
+
+                bool logsOk = snap != null && snap.AnySaved;
+                if (snap != null && !snap.AllSaved)
+                {
+                    string head = snap.AnySaved
+                        ? ("Часть логов не скачалась (" + snap.SavedCount + "/" + snap.TotalCount + "). Не удалось:")
+                        : "Логи не скачались. Ошибки:";
+                    MessageBox.Show(this,
+                        head + "\n  " + string.Join("\n  ", snap.Errors) +
+                        "\n\nОтчёт Excel будет создан или дополнен в любом случае.",
                         Text,
                         MessageBoxButtons.OK,
                         MessageBoxIcon.Warning);
@@ -188,9 +201,13 @@ namespace BrigeLogCopy
 
                 int remaining = CountDataRows();
                 string reportPathDone = ExcelReportHelper.GetReportPath(actRoot);
-                string logsNote = logsOk
-                    ? "Логи с моста сохранены в папку серийного номера."
-                    : "Логи с моста не сохранены — при необходимости повторите операцию после настройки сети.";
+                string logsNote;
+                if (snap != null && snap.AllSaved)
+                    logsNote = "Логи с моста сохранены в папку серийного номера (" + snap.SavedCount + "/" + snap.TotalCount + " эндпоинтов).";
+                else if (logsOk)
+                    logsNote = "Часть логов сохранена (" + snap.SavedCount + "/" + snap.TotalCount + "). Повторите попытку для недостающих файлов.";
+                else
+                    logsNote = "Логи с моста не сохранены — при необходимости повторите операцию после настройки сети.";
                 MessageBox.Show(this,
                     "Готово. Серийный номер: «" + serial + "».\nПапка акта: «" + actFolderName + "».\n" +
                     logsNote + "\n" +

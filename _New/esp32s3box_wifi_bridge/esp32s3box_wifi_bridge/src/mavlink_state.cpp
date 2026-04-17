@@ -2,16 +2,23 @@
  * mavlink_state.cpp — разбор MAVLink и отправка команд по параметрам.
  *
  * ПОТОК ДАННЫХ:
- *   Входящие байты приходят из main.cpp (прочитаны с SerialUART) → mavlinkProcessBytes().
- *   Парсер mavlink_parse_char() собирает пакеты; при полном пакете обрабатываем msgid (HEARTBEAT, PARAM_VALUE).
+ *   Входящие байты приходят из uart-task (SerialUART.read) → mavlinkProcessBytes().
+ *   Парсер mavlink_parse_char() собирает пакеты; при полном пакете обрабатываем msgid (HEARTBEAT, PARAM_VALUE)
+ *   и проверяем gap в msg.seq — это настоящие потери MAVLink (а не parse_error).
  *   Исходящие команды (PARAM_REQUEST_READ, PARAM_SET) пишутся в SerialUART из этого файла.
  *
  * ВЗАИМОДЕЙСТВИЕ:
  *   — bridge_log: bridgeLogSetConnected() при установке/потере связи.
  *   — esp_log: espLogPrintf() для событий в кольцевой лог ESP32.
+ *
+ * ПОТОКОБЕЗОПАСНОСТЬ:
+ *   mavlinkProcessBytes() вызывается ТОЛЬКО из uart-task (FreeRTOS task на core 1).
+ *   Статичные переменные парсера (mavlink_status_t, s_prevSeq) не разделяются между потоками.
+ *   Счётчики-атомики (std::atomic) читаются из web-task без гонки.
  */
 #include <Arduino.h>
 #include <string.h>
+#include <atomic>
 #include "config.h"
 #include <MAVLink.h>
 #include "mavlink_state.h"
@@ -34,16 +41,18 @@ bool paramServo1ReversKnown = false;
 bool paramServo3TrimKnown = false;
 bool paramServo4TrimKnown = false;
 
-/* Метрики для веб-интерфейса: принято/отправлено пакетов, ошибки CRC (потери). */
-uint32_t mavlinkPacketsRx = 0;
-uint32_t mavlinkPacketsTx = 0;
-uint32_t mavlinkPacketDrops = 0;
+/* Атомарные счётчики: uint64_t — без wrap на годы работы. */
+std::atomic<uint64_t> mavlinkRxPkts{0};
+std::atomic<uint64_t> mavlinkRxLost{0};
+std::atomic<uint64_t> mavlinkParseErr{0};
+std::atomic<uint64_t> mavlinkBridgeTxPkts{0};
+std::atomic<uint64_t> mavlinkBytesFromUart{0};
 
-/* Счётчики по типам сообщений (msgid) для единого лога. */
+/* Счётчики по типам сообщений (msgid) для единого лога. Обновляются только из uart-task → без атомиков. */
 uint32_t mavlinkRxByMsgid[256] = {0};
 uint32_t mavlinkTxByMsgid[256] = {0};
 
-/* Кольцевой лог событий MAVLink для /api/log и страницы параметров. */
+/* Кольцевой лог событий MAVLink. */
 char mavlinkLog[MAVLINK_LOG_SIZE][MAVLINK_LOG_ENTRY_LEN];
 uint8_t mavlinkLogHead = 0;
 
@@ -54,16 +63,19 @@ static uint32_t s_lastHeartbeatLogMs = 0;
 uint32_t mavlinkHeartbeatIntervalMs = 0;
 static uint32_t s_prevHeartbeatArrivalMs = 0;
 
+/* Состояние детектора gap по seq. seq — 8-битовое поле, переполняется каждые 256 пакетов. */
+static bool s_prevSeqValid = false;
+static uint8_t s_prevSeq = 0;
+static uint16_t s_prevParseErrSnapshot = 0;
+
 /* System ID и Component ID, с которыми мы (GCS/мост) отправляем команды автопилоту. */
 static const uint8_t MAVLINK_GCS_SYSID = 255;
 static const uint8_t MAVLINK_GCS_COMPID = 190;
 
-/** Обнуляет кольцевой лог mavlinkLog[][]. Вызывается из main.cpp в setup() при WEB_SERVER. */
 void mavlinkInitLog(void) {
     memset(mavlinkLog, 0, sizeof(mavlinkLog));
 }
 
-/** Краткое имя типа сообщения для лога. */
 const char* mavlinkGetMsgName(uint8_t msgid) {
     static char s_name[24];
     switch (msgid) {
@@ -86,7 +98,6 @@ const char* mavlinkGetMsgName(uint8_t msgid) {
     }
 }
 
-/** Сформировать строку со счётчиками по типам для единого лога. */
 void mavlinkGetCountersString(char* buf, size_t bufSize) {
     if (!buf || bufSize < 2) return;
     buf[0] = '\0';
@@ -101,7 +112,6 @@ void mavlinkGetCountersString(char* buf, size_t bufSize) {
     if (pos > 0 && buf[pos - 1] == ' ') buf[pos - 1] = '\0';
 }
 
-/** Добавить запись в кольцевой лог (время в секундах + текст). */
 void mavlinkAddLog(const char* event) {
     snprintf(mavlinkLog[mavlinkLogHead], MAVLINK_LOG_ENTRY_LEN, "%lu %s",
              (unsigned long)(millis() / 1000), event);
@@ -109,20 +119,48 @@ void mavlinkAddLog(const char* event) {
 }
 
 /**
- * Разбирает байты из UART (от автопилота): по одному байту передаём в mavlink_parse_char();
- * при полном пакете обрабатываем HEARTBEAT (связь, lastHeartbeatMs) и PARAM_VALUE (SERVO*).
- * Увеличиваем mavlinkPacketsRx и mavlinkRxByMsgid[msgid]; потери берём из status.packet_rx_drop_count.
- * Вызывается из main.cpp в loop() для каждого блока, прочитанного с SerialUART.
+ * Разбирает байты: для каждого полного пакета проверяет gap в msg.seq (настоящие потери),
+ * аккумулирует parse_error (накопительный delta от status.packet_rx_drop_count, поскольку
+ * поле сбрасывается парсером MAVLink для каждого пакета).
+ * Вызывается ТОЛЬКО из uart-task.
  */
 void mavlinkProcessBytes(const uint8_t* data, uint16_t len) {
     mavlink_message_t msg;
     static mavlink_status_t status;
+
+    mavlinkBytesFromUart.fetch_add((uint64_t)len, std::memory_order_relaxed);
+
     for (uint16_t i = 0; i < len; i++) {
-        if (!mavlink_parse_char(MAVLINK_COMM_0, data[i], &msg, &status))
-            continue;
-        mavlinkPacketsRx++;
+        uint8_t r = mavlink_parse_char(MAVLINK_COMM_0, data[i], &msg, &status);
+
+        /* packet_rx_drop_count накапливается парсером, но сбрасывается при новом заголовке.
+         * Берём дельту, чтобы получить аккумулятивный счётчик. Если значение уменьшилось — начался новый пакет. */
+        uint16_t curErr = (uint16_t)status.packet_rx_drop_count;
+        if (curErr >= s_prevParseErrSnapshot) {
+            uint16_t delta = curErr - s_prevParseErrSnapshot;
+            if (delta > 0)
+                mavlinkParseErr.fetch_add((uint64_t)delta, std::memory_order_relaxed);
+        }
+        s_prevParseErrSnapshot = (r != 0) ? 0 : curErr; /* на полном пакете парсер обнулит, учитываем это */
+
+        if (!r) continue;
+
+        mavlinkRxPkts.fetch_add(1, std::memory_order_relaxed);
         if (msg.msgid < 256)
             mavlinkRxByMsgid[msg.msgid]++;
+
+        /* gap-детект по seq (по модулю 256). Ограничиваем «скачок» 128, чтобы не считать back-to-front как потерю всей шкалы. */
+        if (s_prevSeqValid) {
+            uint8_t expected = (uint8_t)(s_prevSeq + 1);
+            if (msg.seq != expected) {
+                uint8_t gap = (uint8_t)(msg.seq - expected); /* wrap-around автоматически */
+                if (gap > 0 && gap < 128)
+                    mavlinkRxLost.fetch_add((uint64_t)gap, std::memory_order_relaxed);
+            }
+        }
+        s_prevSeq = msg.seq;
+        s_prevSeqValid = true;
+
         switch (msg.msgid) {
             case MAVLINK_MSG_ID_HEARTBEAT: {
                 bool wasDisconnected = !mavlinkConnected;
@@ -172,14 +210,11 @@ void mavlinkProcessBytes(const uint8_t* data, uint16_t len) {
                 break;
             }
             default:
-                /* Остальные типы учитываются в mavlinkRxByMsgid[]; в кольцевой лог не пишем, чтобы не затирать редкие события. */
                 break;
         }
     }
-    mavlinkPacketDrops = (uint32_t)status.packet_rx_drop_count;
 }
 
-/** Проверяет: если прошло больше MAVLINK_HEARTBEAT_TIMEOUT_MS с последнего HEARTBEAT — сбрасывает mavlinkConnected и пишет в лог. Вызывать в loop() при WEB_SERVER. */
 void mavlinkCheckDisconnect(void) {
     if (!mavlinkConnected)
         return;
@@ -188,12 +223,12 @@ void mavlinkCheckDisconnect(void) {
     mavlinkConnected = false;
     mavlinkHeartbeatIntervalMs = 0;
     s_prevHeartbeatArrivalMs = 0;
+    s_prevSeqValid = false; /* при разрыве связи seq-состояние неактуально */
     bridgeLogSetConnected(false);
     espLogPrintf("[MAVLink] disconnected (no heartbeat)");
     mavlinkAddLog("DISCONNECT (no heartbeat)");
 }
 
-/** Формирует MAVLink-пакет PARAM_REQUEST_READ для param_id и пишет его в SerialUART. Вызывается из веб-обработчиков и mavlinkRequestServoParams(). */
 void mavlinkSendParamRequest(const char* param_id) {
     mavlink_message_t msg;
     uint8_t buf[MAVLINK_MAX_PACKET_LEN];
@@ -201,12 +236,11 @@ void mavlinkSendParamRequest(const char* param_id) {
                                         autopilotSysId, autopilotCompId, param_id, -1);
     uint16_t n = mavlink_msg_to_send_buffer(buf, &msg);
     SerialUART.write(buf, n);
-    mavlinkPacketsTx++;
+    mavlinkBridgeTxPkts.fetch_add(1, std::memory_order_relaxed);
     if (msg.msgid < 256)
         mavlinkTxByMsgid[msg.msgid]++;
 }
 
-/** Запрашивает у автопилота три параметра: SERVO1_REVERSED, SERVO3_TRIM, SERVO4_TRIM (три вызова mavlinkSendParamRequest). */
 void mavlinkRequestServoParams(void) {
     mavlinkSendParamRequest("SERVO1_REVERSED");
     mavlinkSendParamRequest("SERVO3_TRIM");
@@ -214,7 +248,6 @@ void mavlinkRequestServoParams(void) {
     mavlinkAddLog("TX PARAM_REQUEST_READ (SERVO1/3/4)");
 }
 
-/** Формирует PARAM_SET с param_id и value, отправляет в SerialUART. Используется со страницы /params при нажатии «Установить». */
 void mavlinkSendParamSet(const char* param_id, float value) {
     mavlink_message_t msg;
     uint8_t buf[MAVLINK_MAX_PACKET_LEN];
@@ -222,8 +255,7 @@ void mavlinkSendParamSet(const char* param_id, float value) {
                                autopilotSysId, autopilotCompId, param_id, value, MAV_PARAM_TYPE_REAL32);
     uint16_t n = mavlink_msg_to_send_buffer(buf, &msg);
     SerialUART.write(buf, n);
-
-    mavlinkPacketsTx++;
+    mavlinkBridgeTxPkts.fetch_add(1, std::memory_order_relaxed);
     if (msg.msgid < 256)
         mavlinkTxByMsgid[msg.msgid]++;
     char ev[MAVLINK_LOG_ENTRY_LEN];

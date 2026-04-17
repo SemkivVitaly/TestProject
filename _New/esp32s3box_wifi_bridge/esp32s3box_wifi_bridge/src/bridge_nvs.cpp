@@ -91,25 +91,81 @@ static bool jsonGetInt(const char* json, const char* key, int* out) {
     return true;
 }
 
-/** Разбирает JSON (тело POST /api/settings), обновляет поля bridge_nvs_config (esp32_mode, ssid, wifi_pass, baud, gpio_tx/rx и т.д.) и сохраняет в NVS. Возвращает true при успешном saveBridgeConfig(). */
+/** Список допустимых baud-значений (совпадает со списком в UI). */
+static bool isValidBaud(int v) {
+    static const int kBauds[] = {1200,2400,4800,9600,19200,38400,57600,76800,115200,
+                                 230400,460800,500800,576000,921600,1000000,1500000,
+                                 2000000,3000000,5000000};
+    for (size_t i = 0; i < sizeof(kBauds)/sizeof(kBauds[0]); i++)
+        if (kBauds[i] == v) return true;
+    return false;
+}
+
+/**
+ * Разбирает JSON (тело POST /api/settings) с ПОЛНОЙ валидацией: SSID 1..31 символ,
+ * пароль 0 (открытая сеть) или 8..63 символов (WPA2), канал 1..13, baud из списка,
+ * GPIO 0..48. При любой ошибке возвращает false, не перезаписывая NVS.
+ */
 bool setBridgeConfigFromJson(const char* json) {
     if (!json) return false;
+    /* Работаем с копией конфига, перекладываем только после полной проверки. */
+    bridge_nvs_config_t tmp = bridge_nvs_config;
     int v;
-    if (jsonGetInt(json, "esp32_mode", &v) && (v == 1 || v == 2))
-        bridge_nvs_config.wifi_mode = (uint8_t)v;
-    jsonGetString(json, "ssid", bridge_nvs_config.ssid, BRIDGE_NVS_SSID_LEN);
-    jsonGetString(json, "wifi_pass", bridge_nvs_config.wifi_pass, BRIDGE_NVS_PASS_LEN);
-    jsonGetString(json, "wifi_hostname", bridge_nvs_config.hostname, BRIDGE_NVS_HOSTNAME_LEN);
-    if (jsonGetInt(json, "wifi_chan", &v) && v >= 1 && v <= 13)
-        bridge_nvs_config.wifi_chan = (uint8_t)v;
-    jsonGetString(json, "ap_ip", bridge_nvs_config.ap_ip, BRIDGE_NVS_APIP_LEN);
-    if (jsonGetInt(json, "baud", &v) && v >= 9600 && v <= 921600)
-        bridge_nvs_config.baud = (uint32_t)v;
-    if (jsonGetInt(json, "gpio_tx", &v) && v >= -1 && v <= 48)
-        bridge_nvs_config.gpio_tx = (int8_t)v;
-    if (jsonGetInt(json, "gpio_rx", &v) && v >= -1 && v <= 48)
-        bridge_nvs_config.gpio_rx = (int8_t)v;
-    if (jsonGetInt(json, "proto", &v))
-        bridge_nvs_config.proto = (uint8_t)v;
+    if (jsonGetInt(json, "esp32_mode", &v)) {
+        if (v != 1 && v != 2) return false;
+        tmp.wifi_mode = (uint8_t)v;
+    }
+    char ssidBuf[BRIDGE_NVS_SSID_LEN];
+    if (jsonGetString(json, "ssid", ssidBuf, sizeof(ssidBuf))) {
+        size_t len = strlen(ssidBuf);
+        if (len < 1 || len > BRIDGE_NVS_SSID_LEN - 1) return false;
+        strncpy(tmp.ssid, ssidBuf, BRIDGE_NVS_SSID_LEN - 1);
+        tmp.ssid[BRIDGE_NVS_SSID_LEN - 1] = '\0';
+    }
+    char passBuf[BRIDGE_NVS_PASS_LEN];
+    if (jsonGetString(json, "wifi_pass", passBuf, sizeof(passBuf))) {
+        size_t len = strlen(passBuf);
+        if (!(len == 0 || (len >= 8 && len <= BRIDGE_NVS_PASS_LEN - 1))) return false;
+        strncpy(tmp.wifi_pass, passBuf, BRIDGE_NVS_PASS_LEN - 1);
+        tmp.wifi_pass[BRIDGE_NVS_PASS_LEN - 1] = '\0';
+    }
+    char hnBuf[BRIDGE_NVS_HOSTNAME_LEN];
+    if (jsonGetString(json, "wifi_hostname", hnBuf, sizeof(hnBuf))) {
+        size_t len = strlen(hnBuf);
+        if (len > BRIDGE_NVS_HOSTNAME_LEN - 1) return false;
+        if (len > 0) { /* пустой hostname оставляем как есть */
+            strncpy(tmp.hostname, hnBuf, BRIDGE_NVS_HOSTNAME_LEN - 1);
+            tmp.hostname[BRIDGE_NVS_HOSTNAME_LEN - 1] = '\0';
+        }
+    }
+    if (jsonGetInt(json, "wifi_chan", &v)) {
+        if (v < 1 || v > 13) return false;
+        tmp.wifi_chan = (uint8_t)v;
+    }
+    char apBuf[BRIDGE_NVS_APIP_LEN];
+    if (jsonGetString(json, "ap_ip", apBuf, sizeof(apBuf))) {
+        if (strlen(apBuf) > 0) {
+            strncpy(tmp.ap_ip, apBuf, BRIDGE_NVS_APIP_LEN - 1);
+            tmp.ap_ip[BRIDGE_NVS_APIP_LEN - 1] = '\0';
+        }
+    }
+    if (jsonGetInt(json, "baud", &v)) {
+        if (!isValidBaud(v)) return false;
+        tmp.baud = (uint32_t)v;
+    }
+    if (jsonGetInt(json, "gpio_tx", &v)) {
+        if (v < -1 || v > 48) return false;
+        tmp.gpio_tx = (int8_t)v;
+    }
+    if (jsonGetInt(json, "gpio_rx", &v)) {
+        if (v < -1 || v > 48) return false;
+        tmp.gpio_rx = (int8_t)v;
+    }
+    if (jsonGetInt(json, "proto", &v)) {
+        if (v < 0 || v > 10) return false;
+        tmp.proto = (uint8_t)v;
+    }
+    /* Всё ок — коммитим. */
+    bridge_nvs_config = tmp;
     return saveBridgeConfig();
 }
