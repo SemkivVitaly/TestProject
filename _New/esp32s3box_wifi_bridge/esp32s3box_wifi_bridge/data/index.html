@@ -19,25 +19,46 @@
  */
 .toastify{padding:12px 20px;color:#ff9734;display:inline-block;box-shadow:0 3px 6px -1px rgba(0,0,0,.12),0 10px 36px -4px rgba(77,96,232,.3);background:-webkit-linear-gradient(315deg,#73a5ff,#5477f5);background:linear-gradient(135deg,#73a5ff,#5477f5);position:fixed;opacity:0;transition:all .4s cubic-bezier(.215,.61,.355,1);border-radius:2px;cursor:pointer;text-decoration:none;max-width:calc(50% - 20px);z-index:2147483647}.toastify.on{opacity:1}.toast-close{background:0 0;border:0;color:#fff;cursor:pointer;font-family:inherit;font-size:1em;opacity:.4;padding:0 5px}.toastify-right{right:15px}.toastify-left{left:15px}.toastify-top{top:-150px}.toastify-bottom{bottom:-150px}.toastify-rounded{border-radius:25px}.toastify-avatar{width:1.5em;height:1.5em;margin:-7px 5px;border-radius:2px}.toastify-center{margin-left:auto;margin-right:auto;left:0;right:0;max-width:fit-content;max-width:-moz-fit-content}@media only screen and (max-width:360px){.toastify-left,.toastify-right{margin-left:auto;margin-right:auto;left:0;right:0;max-width:fit-content}}</style>
     <style>
-    label,summary{font-weight:600;font-size:0.85rem;text-transform:uppercase;letter-spacing:0.5px;color:rgba(255,255,255,0.8);margin-bottom:0.4rem;margin-top:0.5rem;}
+    /* Fluid UI: размер текста/кнопок/отступов под ширину viewport (rem + clamp) */
+    :root{
+      --bf-pad:clamp(0.65rem, 2.5vw + 0.2rem, 1.35rem);
+      --bf-btn-h:clamp(2.75rem, 7.5vw + 0.5rem, 3.4rem);
+      --bf-input-h:clamp(2.45rem, 6.5vw + 0.4rem, 2.85rem);
+    }
+    html{
+      -webkit-text-size-adjust:100%;
+      text-size-adjust:100%;
+      font-size:clamp(9px, 0.22rem + 2.1vw, 12px);
+    }
+    .container{
+      max-width:min(800px, 100% - 2 * var(--bf-pad)) !important;
+      padding-left:var(--bf-pad) !important;
+      padding-right:var(--bf-pad) !important;
+      width:100% !important;
+    }
+    @media (max-width:600px){
+      .row .columns.six,.row .columns.four{width:100% !important;margin-left:0 !important;}
+      .row .columns + .columns{margin-top:0.5rem;}
+    }
+    label,summary{font-weight:600;font-size:clamp(0.75rem, 0.65rem + 0.4vw, 0.85rem);text-transform:uppercase;letter-spacing:0.5px;color:rgba(255,255,255,0.8);margin-bottom:0.4rem;margin-top:0.5rem;}
     form,h3{margin-bottom:1.5rem}
     .dot_green,.dot_red{height:10px;width:10px;border-radius:50%;display:inline-block;margin-right:6px;box-shadow:0 0 5px rgba(0,0,0,0.5);}
     html{min-height:100%}
     body{height:100%;margin:0;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#fff;background:linear-gradient(135deg,#001f3f 0%,#0074d9 100%);background-attachment:fixed;}
-    h2{margin-top:0;font-size:2rem;font-weight:300;border-bottom:1px solid rgba(255,255,255,0.15);padding-bottom:0.5rem;margin-bottom:1.5rem;letter-spacing:1px;}
-    h3,h4{font-weight:300;margin-top:1.5rem;}
-    button.button-primary{background:linear-gradient(135deg,#ff9734,#e6862b);color:#fff;border:none;border-radius:8px;padding:0 25px;height:44px;line-height:44px;font-size:1rem;transition:all 0.3s ease;box-shadow:0 4px 10px rgba(0,0,0,0.2);cursor:pointer;font-weight:600;width:100%;text-transform:uppercase;letter-spacing:1px;}
+    h2{margin-top:0;font-size:clamp(1.35rem, 0.85rem + 1.6vw, 2rem);font-weight:300;border-bottom:1px solid rgba(255,255,255,0.15);padding-bottom:0.5rem;margin-bottom:1.5rem;letter-spacing:1px;}
+    h3,h4{font-weight:300;margin-top:1.5rem;font-size:clamp(1.05rem, 0.8rem + 1vw, 1.35rem);}
+    button.button-primary{background:linear-gradient(135deg,#ff9734,#e6862b);color:#fff;border:none;border-radius:8px;padding:clamp(0.45rem,1.5vw,0.65rem) clamp(1rem,3vw,1.5rem);min-height:var(--bf-btn-h);height:auto;line-height:1.25;font-size:clamp(0.85rem, 0.65rem + 0.7vw, 1rem);transition:all 0.3s ease;box-shadow:0 4px 10px rgba(0,0,0,0.2);cursor:pointer;font-weight:600;width:100%;text-transform:uppercase;letter-spacing:1px;touch-action:manipulation;}
     button.button-primary:hover{transform:translateY(-2px);box-shadow:0 6px 15px rgba(0,0,0,0.3);color:#fff;background:linear-gradient(135deg,#e6862b,#cc7421);}
-    input,select{color:#000;background:rgba(255,255,255,0.95);border:1px solid rgba(255,255,255,0.3);border-radius:6px;padding:10px 12px;font-size:1rem;transition:all 0.3s;width:100%;box-sizing:border-box;font-family:inherit;}
+    input,select{color:#000;background:rgba(255,255,255,0.95);border:1px solid rgba(255,255,255,0.3);border-radius:6px;padding:clamp(8px,1.8vw,12px) clamp(10px,2vw,14px);min-height:var(--bf-input-h);font-size:clamp(0.88rem, 0.7rem + 0.6vw, 1rem);transition:all 0.3s;width:100%;box-sizing:border-box;font-family:inherit;}
     input:focus,select:focus{background:#fff;border-color:#ff9734;box-shadow:0 0 8px rgba(255,151,52,0.5);outline:none;}
     .dot_green{background-color:#68b838;}
     .dot_red{background-color:#f63e3e;}
-    .small_text{font-size:0.95rem;color:rgba(255,255,255,0.9);}
+    .small_text{font-size:clamp(0.88rem, 0.75rem + 0.5vw, 0.98rem);color:rgba(255,255,255,0.9);}
     .img_button{transition:all 0.2s;cursor:pointer;}
     .img_button:hover{transform:scale(1.15);filter:brightness(1.15);}
     button.icon_btn{background:transparent;border:none;padding:0.25rem;margin:0 0 0 1.25rem;display:inline-flex;align-items:center;justify-content:center;vertical-align:middle;line-height:0;}
     button.icon_btn:focus{outline:2px solid rgba(255,151,52,0.6);outline-offset:2px;border-radius:4px;}
-    .bridge-logo{font-size:1.75rem;font-weight:600;color:#fff;letter-spacing:0.12em;text-align:center;margin:1.2rem 0 0.5rem;text-shadow:0 2px 8px rgba(0,0,0,0.35);}
+    .bridge-logo{font-size:clamp(1.15rem, 0.85rem + 1.2vw, 1.75rem);font-weight:600;color:#fff;letter-spacing:0.12em;text-align:center;margin:1.2rem 0 0.5rem;text-shadow:0 2px 8px rgba(0,0,0,0.35);}
     .tooltip{position:relative;display:inline-block;}
     .tooltip .tooltiptext{visibility:hidden;width:max-content;max-width:250px;background-color:rgba(0,0,0,0.85);color:#fff;text-align:center;padding:8px 12px;border-radius:6px;position:absolute;z-index:10;bottom:130%;left:50%;transform:translateX(-50%);opacity:0;transition:opacity 0.3s;font-size:0.85rem;font-weight:normal;line-height:1.4;}
     .tooltip .tooltiptext::after{content:"";position:absolute;top:100%;left:50%;margin-left:-5px;border-width:5px;border-style:solid;border-color:rgba(0,0,0,0.85) transparent transparent;}
@@ -45,12 +66,14 @@
     div.info{background:rgba(0,0,0,0.25);border-radius:8px;padding:15px;margin-bottom:1.5rem;box-shadow:0 4px 6px rgba(0,0,0,0.1);backdrop-filter:blur(5px);border:1px solid rgba(255,255,255,0.05);}
     div.note{border-left:solid 4px #ff881a;}
     div.issue{border-left:solid 4px #f63e3e;}
-    .container > form > div {background:rgba(0,0,0,0.35);padding:2rem;border-radius:16px;margin-bottom:2rem;box-shadow:0 8px 32px rgba(0,0,0,0.3);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.05);}
-    img.bridge-logo-img {max-height:56px;filter:drop-shadow(0 4px 6px rgba(0,0,0,0.3));margin:1rem auto;display:block;}
+    .container > form > div {background:rgba(0,0,0,0.35);padding:clamp(1rem, 3.5vw + 0.4rem, 2rem);border-radius:16px;margin-bottom:clamp(1rem,3vw,2rem);box-shadow:0 8px 32px rgba(0,0,0,0.3);backdrop-filter:blur(12px);border:1px solid rgba(255,255,255,0.05);}
+    img.bridge-logo-img {max-height:clamp(40px, 12vw, 56px);filter:drop-shadow(0 4px 6px rgba(0,0,0,0.3));margin:1rem auto;display:block;}
     .row {margin-bottom: 1rem;}
-    #read_bytes, #tcp_connected, #udp_connected, #wifi_rssi_dbm, #chip_temp_c {font-size:1.1rem;font-weight:500;padding:8px 0;}
-    #web_conn_status {font-size:1.1rem;font-weight:600;padding:10px;background:rgba(0,0,0,0.2);border-radius:8px;text-align:center;margin-bottom:1rem;width:100%;}
-    #current_client_ip {color:rgba(255,255,255,0.7);font-size:0.9rem;}
+    #read_bytes, #tcp_connected, #udp_connected, #wifi_rssi_dbm, #chip_temp_c {font-size:clamp(0.95rem, 0.8rem + 0.6vw, 1.1rem);font-weight:500;padding:8px 0;}
+    #web_conn_status {font-size:clamp(0.95rem, 0.8rem + 0.6vw, 1.1rem);font-weight:600;padding:clamp(8px,2vw,12px);background:rgba(0,0,0,0.2);border-radius:8px;text-align:center;margin-bottom:1rem;width:100%;}
+    #current_client_ip {color:rgba(255,255,255,0.7);font-size:clamp(0.82rem, 0.72rem + 0.45vw, 0.92rem);}
+    .udp_toolbar{display:flex;flex-wrap:wrap;align-items:center;gap:0.4rem;row-gap:0.5rem;width:100%;}
+    .udp_toolbar .icon_btn{margin:0 0.25rem 0 0 !important;}
     
     @supports (-webkit-appearance:none) or (-moz-appearance:none){.checkbox-wrapper-14 input[type=checkbox]{--active:#ff9734;--active-inner:#fff;--focus:0px rgb(255, 169, 88);--border:#ffffff;--border-hover:#ff9734;--background:#fffff;--disabled:#F6F8FF;--disabled-inner:#E1E6F9;-webkit-appearance:none;-moz-appearance:none;height:24px;outline:0;display:inline-block;vertical-align:top;position:relative;cursor:pointer;border:1px solid var(--bc, var(--border));background:var(--b, var(--background));transition:background .3s,border-color .3s,box-shadow .2s}.checkbox-wrapper-14 input[type=checkbox]:after{content:"";display:block;left:0;top:0;position:absolute;transition:transform var(--d-t, 0.3s) var(--d-t-e, ease),opacity var(--d-o, 0.2s)}.checkbox-wrapper-14 input[type=checkbox]:checked{--b:var(--active);--bc:var(--active);--d-o:.3s;--d-t:.6s;--d-t-e:cubic-bezier(.2, .85, .32, 1.2)}.checkbox-wrapper-14 input[type=checkbox]:disabled{--b:var(--disabled);cursor:not-allowed;opacity:.9}.checkbox-wrapper-14 input[type=checkbox]:disabled:checked{--b:var(--disabled-inner);--bc:var(--border)}.checkbox-wrapper-14 input[type=checkbox]:disabled+label{cursor:not-allowed}.checkbox-wrapper-14 input[type=checkbox]:hover:not(:checked):not(:disabled){--bc:var(--border-hover)}.checkbox-wrapper-14 input[type=checkbox]:focus{--bc:var(--active)}.checkbox-wrapper-14 input[type=checkbox]:not(.switch){width:24px;border-radius:7px}.checkbox-wrapper-14 input[type=checkbox]:not(.switch):after{opacity:var(--o, 0);width:6px;height:10px;border:2px solid var(--active-inner);border-top:0;border-left:0;left:8px;top:5px;transform:rotate(var(--r, 20deg))}.checkbox-wrapper-14 input[type=checkbox]:not(.switch):checked{--o:1;--r:43deg}.checkbox-wrapper-14 input[type=checkbox]+label{display:inline-block;vertical-align:middle;cursor:pointer;margin-left:8px;font-weight:500;font-size:1rem;color:#fff;text-transform:none;letter-spacing:normal;margin-top:2px;}.checkbox-wrapper-14 input[type=checkbox].switch{width:44px;border-radius:12px}.checkbox-wrapper-14 input[type=checkbox].switch:after{left:3px;top:3px;border-radius:50%;width:16px;height:16px;background:var(--ab, var(--border));transform:translateX(var(--x, 0))}.checkbox-wrapper-14 input[type=checkbox].switch:checked{--ab:var(--active-inner);--x:20px}.checkbox-wrapper-14 input[type=checkbox].switch:disabled:not(:checked):after{opacity:.6}}.checkbox-wrapper-14 *{box-sizing:inherit}.checkbox-wrapper-14 :after,.checkbox-wrapper-14 :before{box-sizing:inherit}
     </style>
@@ -108,10 +131,10 @@
                 </div>
                 <div class="four columns">
                     <label>Подключённые UDP-клиенты</label>
-                    <div style="display: flex" >
+                    <div class="udp_toolbar">
                         <div id="udp_connected" class="tooltip" style="width: fit-content"><span class="tooltiptext" id="tooltip_udp_clients">-</span>-</div>
-                        <button type="button" class="img_button icon_btn" style="margin-left:5rem" title="Добавить UDP-клиента" aria-label="Добавить UDP-клиента" onclick="add_new_udp_client()"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="#ff9734" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></button>
-                        <button type="button" class="img_button icon_btn" style="margin-left:0.5rem" title="Сбросить UDP" aria-label="Сбросить UDP" onclick="clear_udp_clients()"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="#ff9734" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>
+                        <button type="button" class="img_button icon_btn" title="Добавить UDP-клиента" aria-label="Добавить UDP-клиента" onclick="add_new_udp_client()"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="#ff9734" d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></svg></button>
+                        <button type="button" class="img_button icon_btn" title="Сбросить UDP" aria-label="Сбросить UDP" onclick="clear_udp_clients()"><svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" aria-hidden="true"><path fill="#ff9734" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></button>
                     </div>
                 </div>
             </div>
