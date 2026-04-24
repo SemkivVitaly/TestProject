@@ -72,22 +72,24 @@ static const char PROGMEM kRootHtml[] =
     "<meta name='viewport' content='width=device-width, initial-scale=1'>"
     "<style>"
     "body{font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;margin:0;padding:0;background:linear-gradient(135deg,#001f3f 0%,#0074d9 100%);color:#fff;display:flex;justify-content:center;align-items:center;min-height:100vh;}"
-    ".container{background:rgba(0,0,0,0.4);padding:2.5rem;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.5);text-align:center;max-width:400px;width:90%;backdrop-filter:blur(10px);}"
+    ".container{background:rgba(0,0,0,0.4);padding:2.5rem;border-radius:16px;box-shadow:0 10px 30px rgba(0,0,0,0.5);text-align:center;max-width:440px;width:90%;backdrop-filter:blur(10px);}"
     "h1{margin-top:0;font-size:2.2rem;font-weight:300;margin-bottom:2rem;letter-spacing:1px;}"
     "a{display:block;background:#33c3f0;color:#fff;text-decoration:none;padding:14px 20px;margin:12px 0;border-radius:8px;font-weight:600;font-size:1.1rem;transition:all 0.3s ease;box-shadow:0 4px 6px rgba(0,0,0,0.2);}"
     "a:hover{background:#1eaedb;transform:translateY(-2px);box-shadow:0 6px 12px rgba(0,0,0,0.3);}"
-    ".log-links{display:flex;gap:10px;margin-top:12px;} .log-links a{flex:1;margin:0;font-size:0.95rem;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);}"
+    ".log-links{display:flex;gap:10px;margin-top:12px;} .log-links a{flex:1;margin:0;font-size:0.92rem;background:rgba(255,255,255,0.1);border:1px solid rgba(255,255,255,0.2);}"
     ".log-links a:hover{background:rgba(255,255,255,0.2);}"
+    ".raw{font-size:0.78rem;color:rgba(255,255,255,0.55);margin-top:1.2rem;}"
+    ".raw a{display:inline;background:none;padding:0;margin:0 8px;color:#7fd1ff;font-weight:400;box-shadow:none;text-decoration:underline;}"
     "</style></head><body>"
     "<div class='container'>"
     "<h1>ESP32-S3 Bridge</h1>"
     "<a href='/bridge' style='background:#ff9734;'>Настройки Bridge UI</a>"
     "<a href='/params'>Управление SERVO</a>"
     "<div class='log-links'>"
-    "<a href='/api/log/file'>Единый лог</a>"
-    "<a href='/api/log'>JSON Пакеты</a>"
-    "<a href='/api/log/esp32'>Лог ESP32</a>"
+    "<a href='/log'>Единый лог</a>"
+    "<a href='/esp32log'>Лог ESP32</a>"
     "</div>"
+    "<div class='raw'>RAW API: <a href='/api/log/file'>log/file</a><a href='/api/log/esp32'>log/esp32</a><a href='/api/log'>log</a></div>"
     "</div></body></html>";
 
 static void handleRoot(AsyncWebServerRequest* req) {
@@ -671,6 +673,336 @@ static void handleApiLogEsp32(AsyncWebServerRequest* req) {
     free(buf);
 }
 
+/* /api/log/samples — последние RX/TX пакеты в hex (для просмотра в UI). */
+static void handleApiLogSamples(AsyncWebServerRequest* req) {
+    uint8_t raw[64];
+    uint16_t rxN = bridgeLogGetLastRxSample(raw, sizeof(raw));
+    char rxHex[3 * 64 + 1];
+    size_t p = 0;
+    for (uint16_t i = 0; i < rxN; i++) p += snprintf(rxHex + p, sizeof(rxHex) - p, "%02X%s", raw[i], (i + 1 < rxN) ? " " : "");
+    rxHex[p] = '\0';
+
+    uint16_t txN = bridgeLogGetLastTxSample(raw, sizeof(raw));
+    char txHex[3 * 64 + 1];
+    p = 0;
+    for (uint16_t i = 0; i < txN; i++) p += snprintf(txHex + p, sizeof(txHex) - p, "%02X%s", raw[i], (i + 1 < txN) ? " " : "");
+    txHex[p] = '\0';
+
+    char buf[512];
+    snprintf(buf, sizeof(buf),
+        "{\"rx_len\":%u,\"rx_hex\":\"%s\",\"tx_len\":%u,\"tx_hex\":\"%s\"}",
+        (unsigned)rxN, rxHex, (unsigned)txN, txHex);
+    AsyncWebServerResponse* r = req->beginResponse(200, "application/json", buf);
+    addNoStore(r);
+    req->send(r);
+}
+
+/* ===================================================================
+ * Страница /log  — "Единый лог" (HTML-dashboard, авто-обновление)
+ * =================================================================== */
+static const char PROGMEM kLogPageHtml[] =
+    "<!DOCTYPE html><html lang='ru'><head><meta charset='utf-8'>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<title>Единый лог — ESP32 Bridge</title>"
+    "<style>"
+    "*{box-sizing:border-box}"
+    "body{margin:0;padding:20px;font-family:'Segoe UI',Roboto,sans-serif;color:#fff;"
+    "background:linear-gradient(135deg,#001f3f 0%,#0074d9 100%);background-attachment:fixed;min-height:100vh;}"
+    ".wrap{max-width:1100px;margin:0 auto;}"
+    "header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;}"
+    "h1{font-weight:300;font-size:1.9rem;margin:0;letter-spacing:.5px;}"
+    ".nav{display:flex;gap:8px;flex-wrap:wrap;}"
+    ".nav a,.nav button{background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.18);"
+    "padding:8px 14px;border-radius:8px;text-decoration:none;font-size:.88rem;cursor:pointer;font-family:inherit;transition:.2s;}"
+    ".nav a:hover,.nav button:hover{background:rgba(255,151,52,.25);border-color:#ff9734;}"
+    ".nav a.primary{background:#ff9734;border-color:#ff9734;color:#fff;font-weight:600;}"
+    ".nav a.primary:hover{background:#e6862b;}"
+    ".grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px;margin-bottom:14px;}"
+    ".card{background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.08);border-radius:12px;"
+    "padding:16px 18px;box-shadow:0 6px 20px rgba(0,0,0,.25);backdrop-filter:blur(8px);}"
+    ".card h2{margin:0 0 10px 0;font-size:.95rem;font-weight:600;text-transform:uppercase;letter-spacing:1px;"
+    "color:rgba(255,255,255,.72);border-bottom:1px solid rgba(255,255,255,.08);padding-bottom:8px;}"
+    ".kv{display:grid;grid-template-columns:minmax(120px,auto) 1fr;gap:6px 14px;font-size:.94rem;}"
+    ".kv .k{color:rgba(255,255,255,.65);}"
+    ".kv .v{font-weight:500;word-break:break-word;}"
+    ".dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:7px;vertical-align:middle;box-shadow:0 0 6px rgba(0,0,0,.5);}"
+    ".d-ok{background:#68b838;}.d-no{background:#f63e3e;}.d-warn{background:#ffc107;}"
+    "table{width:100%;border-collapse:collapse;font-size:.88rem;}"
+    "th{text-align:left;font-weight:600;padding:6px 8px;border-bottom:1px solid rgba(255,255,255,.15);"
+    "color:rgba(255,255,255,.6);text-transform:uppercase;font-size:.76rem;letter-spacing:.5px;}"
+    "td{padding:8px;border-bottom:1px solid rgba(255,255,255,.06);vertical-align:top;}"
+    ".proto-tcp{color:#33c3f0;font-weight:600;} .proto-udp{color:#ff9734;font-weight:600;}"
+    ".hex{font-family:Consolas,'Cascadia Mono','Liberation Mono',monospace;font-size:.82rem;"
+    "background:rgba(0,0,0,.35);padding:8px 10px;border-radius:6px;word-break:break-all;line-height:1.5;"
+    "border:1px solid rgba(255,255,255,.06);max-height:90px;overflow-y:auto;}"
+    ".ev{font-family:Consolas,'Cascadia Mono',monospace;font-size:.82rem;"
+    "background:rgba(0,0,0,.35);border-radius:6px;padding:8px 10px;max-height:220px;overflow-y:auto;white-space:pre-wrap;}"
+    ".pill{display:inline-block;padding:2px 9px;border-radius:999px;font-size:.78rem;font-weight:600;}"
+    ".pill-ok{background:rgba(104,184,56,.18);color:#8fd65b;border:1px solid rgba(104,184,56,.35);}"
+    ".pill-no{background:rgba(246,62,62,.15);color:#ff8787;border:1px solid rgba(246,62,62,.35);}"
+    ".muted{color:rgba(255,255,255,.55);}"
+    ".row2{grid-column:span 2;}"
+    "@media(max-width:700px){.row2{grid-column:auto;}}"
+    ".ts{font-size:.78rem;color:rgba(255,255,255,.5);margin-left:6px;}"
+    "</style></head><body><div class='wrap'>"
+    "<header>"
+    "<h1>Единый лог <span class='ts' id='ts'>—</span></h1>"
+    "<nav class='nav'>"
+    "<a href='/'>&larr; Главная</a>"
+    "<a href='/bridge'>Настройки</a>"
+    "<a href='/esp32log'>Лог ESP32</a>"
+    "<a class='primary' href='/api/log/file' download='bridge_log.txt'>Скачать .txt</a>"
+    "<button onclick='loadAll(true)'>Обновить</button>"
+    "</nav></header>"
+
+    "<div class='grid'>"
+
+    "<div class='card'><h2>Соединение MAVLink / MissionPlanner</h2>"
+    "<div class='kv'>"
+    "<div class='k'>Статус</div><div class='v' id='mav_status'>—</div>"
+    "<div class='k'>Последний HEARTBEAT</div><div class='v' id='hb_age'>—</div>"
+    "<div class='k'>Интервал HB</div><div class='v' id='hb_int'>—</div>"
+    "<div class='k'>Ошибок парсинга</div><div class='v' id='parse_err'>—</div>"
+    "<div class='k'>Последняя ошибка</div><div class='v' id='last_err'>—</div>"
+    "</div></div>"
+
+    "<div class='card'><h2>Устройство</h2>"
+    "<div class='kv'>"
+    "<div class='k'>Уникальный ID чипа</div><div class='v' id='chip_uid' style='font-family:Consolas,monospace;font-size:.85rem'>—</div>"
+    "<div class='k'>MAC</div><div class='v' id='chip_mac' style='font-family:Consolas,monospace;font-size:.85rem'>—</div>"
+    "<div class='k'>Uptime</div><div class='v' id='uptime'>—</div>"
+    "<div class='k'>Свободный heap</div><div class='v' id='heap'>—</div>"
+    "<div class='k'>Температура чипа</div><div class='v' id='chip_temp'>—</div>"
+    "</div></div>"
+
+    "<div class='card'><h2>Wi-Fi / Сигнал</h2>"
+    "<div class='kv'>"
+    "<div class='k'>RSSI (сейчас)</div><div class='v' id='rssi_now'>—</div>"
+    "<div class='k'>Мин / Макс / Средн.</div><div class='v' id='rssi_mma'>—</div>"
+    "<div class='k'>AP assoc / disassoc</div><div class='v' id='ap_ev'>—</div>"
+    "<div class='k'>STA реконнектов</div><div class='v' id='sta_rc'>—</div>"
+    "</div></div>"
+
+    "<div class='card row2'><h2>Подключённые клиенты</h2>"
+    "<table id='tbl_clients'><thead><tr>"
+    "<th>Протокол</th><th>IP : порт</th><th>Соединение</th><th>Байт в / из ESP</th><th>Очередь</th>"
+    "</tr></thead><tbody id='clients_tb'><tr><td class='muted' colspan='5'>Ожидание данных…</td></tr></tbody></table></div>"
+
+    "<div class='card'><h2>Пакеты MAVLink</h2>"
+    "<div class='kv'>"
+    "<div class='k'>Получено RX</div><div class='v' id='p_rx'>—</div>"
+    "<div class='k'>Отправлено в GCS (TX)</div><div class='v' id='p_tx'>—</div>"
+    "<div class='k'>Потеряно (seq-gap)</div><div class='v' id='p_lost'>—</div>"
+    "<div class='k'>Всего обработано</div><div class='v' id='p_total'>—</div>"
+    "<div class='k'>Доля потерь</div><div class='v' id='p_lossp'>—</div>"
+    "</div></div>"
+
+    "<div class='card'><h2>UART (автопилот)</h2>"
+    "<div class='kv'>"
+    "<div class='k'>Байт RX / TX</div><div class='v' id='uart_bytes'>—</div>"
+    "<div class='k'>Overruns</div><div class='v' id='uart_or'>—</div>"
+    "<div class='k'>Байт в сеть / из сети</div><div class='v' id='net_bytes'>—</div>"
+    "<div class='k'>TCP connect / disconnect</div><div class='v' id='tcp_cd'>—</div>"
+    "</div></div>"
+
+    "<div class='card'><h2>Последний RX-пакет (hex)</h2>"
+    "<div class='hex' id='rx_sample'>—</div>"
+    "<div class='muted' style='font-size:.78rem;margin-top:6px'>Длина: <span id='rx_len'>0</span> байт</div></div>"
+
+    "<div class='card'><h2>Последний TX-пакет (hex)</h2>"
+    "<div class='hex' id='tx_sample'>—</div>"
+    "<div class='muted' style='font-size:.78rem;margin-top:6px'>Длина: <span id='tx_len'>0</span> байт</div></div>"
+
+    "<div class='card row2'><h2>Последние события MAVLink</h2>"
+    "<div class='ev' id='mav_events'>—</div></div>"
+
+    "</div></div>"
+
+    "<script>"
+    "function fmt(n){if(n==null||isNaN(n))return '—';n=Number(n);"
+    "if(n>=1e6)return(n/1e6).toFixed(2)+' M';if(n>=1e3)return(n/1e3).toFixed(1)+' k';return String(n);}"
+    "function fmtBytes(b){if(b==null||isNaN(b))return '—';b=Number(b);"
+    "if(b>=1048576)return(b/1048576).toFixed(2)+' MB';if(b>=1024)return(b/1024).toFixed(1)+' kB';return b+' B';}"
+    "function fmtMs(m){if(m==null||isNaN(m))return '—';m=Number(m);"
+    "if(m>=60000)return(m/60000).toFixed(1)+' мин';if(m>=1000)return(m/1000).toFixed(1)+' с';return m+' мс';}"
+    "function fmtUp(s){s=Number(s)||0;var d=Math.floor(s/86400);s-=d*86400;var h=Math.floor(s/3600);s-=h*3600;var m=Math.floor(s/60);s-=m*60;"
+    "return(d?d+'д ':'')+h+'ч '+m+'м '+Math.floor(s)+'с';}"
+    "function pill(ok,t){return '<span class=\"pill '+(ok?'pill-ok':'pill-no')+'\">'+t+'</span>';}"
+    "function dot(ok){return '<span class=\"dot '+(ok?'d-ok':'d-no')+'\"></span>';}"
+    "async function jget(u){var c=new AbortController();var to=setTimeout(function(){c.abort();},2200);"
+    "try{var r=await fetch(u,{signal:c.signal});clearTimeout(to);if(!r.ok)return null;return await r.json();}"
+    "catch(e){clearTimeout(to);return null;}}"
+    "async function loadAll(force){"
+    "var st=await jget('/api/status');"
+    "var inf=await jget('/api/system/info');"
+    "var cli=await jget('/api/clients');"
+    "var smp=await jget('/api/log/samples');"
+    "document.getElementById('ts').textContent='(обновлено '+new Date().toLocaleTimeString()+')';"
+    "if(st){"
+    "var conn=!!st.connected;"
+    "document.getElementById('mav_status').innerHTML=dot(conn)+(conn?'Подключено к MissionPlanner/MAVLink':'Нет HEARTBEAT');"
+    "document.getElementById('hb_age').textContent=conn?fmtMs(st.heartbeat_age_ms):'—';"
+    "document.getElementById('hb_int').textContent=st.heartbeat_interval_ms?fmtMs(st.heartbeat_interval_ms):'—';"
+    "document.getElementById('parse_err').textContent=fmt(st.mavlink_parse_err);"
+    "document.getElementById('last_err').textContent=st.last_error||'none';"
+    "document.getElementById('uptime').textContent=fmtUp(st.uptime);"
+    "document.getElementById('heap').textContent=fmtBytes(st.free_heap)+' (min '+fmtBytes(st.min_free_heap)+', max-блок '+fmtBytes(st.largest_free_block)+')';"
+    "document.getElementById('chip_temp').textContent=(st.chip_temp_c!=null?st.chip_temp_c.toFixed(1)+' °C':'—');"
+    "document.getElementById('rssi_now').textContent=(st.rssi_now!=null?st.rssi_now+' dBm':'—');"
+    "document.getElementById('rssi_mma').textContent=st.rssi_min+' / '+st.rssi_max+' / '+st.rssi_avg+' dBm';"
+    "document.getElementById('ap_ev').textContent=(st.ap_assoc_total||0)+' / '+(st.ap_disassoc_total||0);"
+    "document.getElementById('sta_rc').textContent=fmt(st.sta_reconnects_total);"
+    "document.getElementById('p_rx').textContent=fmt(st.mavlink_rx_pkts);"
+    "document.getElementById('p_tx').textContent=fmt(st.mavlink_bridge_tx_pkts);"
+    "document.getElementById('p_lost').textContent=fmt(st.mavlink_rx_lost);"
+    "document.getElementById('p_total').textContent=fmt((Number(st.mavlink_rx_pkts||0)+Number(st.mavlink_rx_lost||0)));"
+    "var lp=st.mavlink_loss_pct!=null?Number(st.mavlink_loss_pct):0;"
+    "document.getElementById('p_lossp').innerHTML=lp.toFixed(2)+'% '+pill(lp<5,lp<5?'OK':'HIGH');"
+    "document.getElementById('uart_bytes').textContent=fmtBytes(st.uart_bytes_rx)+' / '+fmtBytes(st.uart_bytes_tx);"
+    "document.getElementById('uart_or').innerHTML=st.uart_overruns+' '+pill(!st.uart_overruns,st.uart_overruns?'WARN':'OK');"
+    "document.getElementById('net_bytes').textContent=fmtBytes(st.net_bytes_to_gcs)+' / '+fmtBytes(st.net_bytes_from_gcs);"
+    "document.getElementById('tcp_cd').textContent=(st.tcp_connects_total||0)+' / '+(st.tcp_disconnects_total||0);"
+    "if(st.log&&st.log.length){document.getElementById('mav_events').textContent=st.log.slice().reverse().join('\\n');}"
+    "}"
+    "if(inf){"
+    "document.getElementById('chip_uid').textContent=inf.chip_uid||'—';"
+    "document.getElementById('chip_mac').textContent=inf.esp_mac||'—';"
+    "}"
+    "if(cli){"
+    "var tb=document.getElementById('clients_tb');tb.innerHTML='';"
+    "var rows=0;"
+    "if(cli.tcp){cli.tcp.forEach(function(t){"
+    "var tr=document.createElement('tr');"
+    "tr.innerHTML='<td><span class=\"proto-tcp\">TCP</span></td>'+"
+    "'<td>'+t.peer+'</td>'+"
+    "'<td>'+fmtMs(t.connected_ms)+'</td>'+"
+    "'<td>'+fmtBytes(t.bytes_in)+' / '+fmtBytes(t.bytes_out)+'</td>'+"
+    "'<td>'+t.queue_used+'/'+t.queue_size+(t.drop_bytes?' <span class=\"muted\">(drop '+t.drop_bytes+')</span>':'')+'</td>';"
+    "tb.appendChild(tr);rows++;});}"
+    "if(cli.udp){"
+    "var tr=document.createElement('tr');"
+    "tr.innerHTML='<td><span class=\"proto-udp\">UDP</span></td>'+"
+    "'<td>'+cli.udp.peer+'</td>'+"
+    "'<td>посл. '+fmtMs(cli.udp.last_packet_ms)+' назад</td>'+"
+    "'<td>'+fmtBytes(cli.udp.bytes_in)+' / '+fmtBytes(cli.udp.bytes_out)+'</td>'+"
+    "'<td class=\"muted\">—</td>';"
+    "tb.appendChild(tr);rows++;"
+    "}"
+    "if(rows===0)tb.innerHTML='<tr><td class=\"muted\" colspan=\"5\">Клиенты не подключены</td></tr>';"
+    "}"
+    "if(smp){"
+    "document.getElementById('rx_sample').textContent=smp.rx_len?smp.rx_hex:'(нет данных)';"
+    "document.getElementById('rx_len').textContent=smp.rx_len||0;"
+    "document.getElementById('tx_sample').textContent=smp.tx_len?smp.tx_hex:'(нет данных)';"
+    "document.getElementById('tx_len').textContent=smp.tx_len||0;"
+    "}"
+    "}"
+    "loadAll();setInterval(function(){if(!document.hidden)loadAll();},2000);"
+    "</script></body></html>";
+
+static void handleLogPage(AsyncWebServerRequest* req) {
+    AsyncWebServerResponse* r = req->beginResponse_P(200, "text/html; charset=utf-8", kLogPageHtml);
+    req->send(r);
+}
+
+/* ===================================================================
+ * Страница /esp32log — просмотр лога событий ESP32
+ * =================================================================== */
+static const char PROGMEM kEspLogPageHtml[] =
+    "<!DOCTYPE html><html lang='ru'><head><meta charset='utf-8'>"
+    "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+    "<title>Лог ESP32 — Bridge</title>"
+    "<style>"
+    "*{box-sizing:border-box}"
+    "body{margin:0;padding:20px;font-family:'Segoe UI',Roboto,sans-serif;color:#fff;"
+    "background:linear-gradient(135deg,#001f3f 0%,#0074d9 100%);background-attachment:fixed;min-height:100vh;}"
+    ".wrap{max-width:1100px;margin:0 auto;}"
+    "header{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;margin-bottom:18px;}"
+    "h1{font-weight:300;font-size:1.9rem;margin:0;letter-spacing:.5px;}"
+    ".nav{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}"
+    ".nav a,.nav button,.nav label{background:rgba(255,255,255,.08);color:#fff;border:1px solid rgba(255,255,255,.18);"
+    "padding:8px 14px;border-radius:8px;text-decoration:none;font-size:.88rem;cursor:pointer;font-family:inherit;transition:.2s;}"
+    ".nav a:hover,.nav button:hover,.nav label:hover{background:rgba(255,151,52,.25);border-color:#ff9734;}"
+    ".nav a.primary{background:#ff9734;border-color:#ff9734;color:#fff;font-weight:600;}"
+    ".nav a.primary:hover{background:#e6862b;}"
+    ".nav input[type=checkbox]{margin-right:6px;vertical-align:middle;}"
+    ".card{background:rgba(0,0,0,.35);border:1px solid rgba(255,255,255,.08);border-radius:12px;"
+    "padding:14px 16px;box-shadow:0 6px 20px rgba(0,0,0,.25);backdrop-filter:blur(8px);}"
+    ".meta{display:flex;flex-wrap:wrap;gap:14px;font-size:.88rem;margin-bottom:12px;color:rgba(255,255,255,.75);}"
+    ".meta span b{color:#fff;font-weight:600;}"
+    "#logview{font-family:Consolas,'Cascadia Mono','Liberation Mono',monospace;font-size:.86rem;line-height:1.55;"
+    "background:rgba(0,0,0,.45);border:1px solid rgba(255,255,255,.08);border-radius:8px;"
+    "padding:14px 16px;height:calc(100vh - 230px);min-height:360px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;}"
+    ".ln-err{color:#ff8f8f;}.ln-warn{color:#ffd07a;}.ln-ok{color:#8fd65b;}.ln-info{color:#9bd4ff;}"
+    ".ts{font-size:.78rem;color:rgba(255,255,255,.5);margin-left:6px;}"
+    ".muted{color:rgba(255,255,255,.55);}"
+    "</style></head><body><div class='wrap'>"
+    "<header>"
+    "<h1>Лог ESP32 <span class='ts' id='ts'>—</span></h1>"
+    "<nav class='nav'>"
+    "<a href='/'>&larr; Главная</a>"
+    "<a href='/log'>Единый лог</a>"
+    "<label><input type='checkbox' id='auto' checked>авто 3с</label>"
+    "<label><input type='checkbox' id='follow' checked>следить</label>"
+    "<button onclick='loadLog()'>Обновить</button>"
+    "<a class='primary' href='/api/log/esp32' download='esp32.log'>Скачать .log</a>"
+    "</nav></header>"
+
+    "<div class='card'>"
+    "<div class='meta'>"
+    "<span>Строк: <b id='m_lines'>—</b></span>"
+    "<span>Размер: <b id='m_size'>—</b></span>"
+    "<span>Uptime: <b id='m_up'>—</b></span>"
+    "<span>Heap: <b id='m_heap'>—</b></span>"
+    "<span>Темп: <b id='m_temp'>—</b></span>"
+    "<span>RSSI: <b id='m_rssi'>—</b></span>"
+    "</div>"
+    "<div id='logview'><span class='muted'>Загрузка лога…</span></div>"
+    "</div>"
+    "</div>"
+
+    "<script>"
+    "function classify(l){var u=l.toUpperCase();"
+    "if(u.indexOf('[E]')>=0||u.indexOf('ERROR')>=0||u.indexOf('FAIL')>=0||u.indexOf('PANIC')>=0)return 'ln-err';"
+    "if(u.indexOf('[W]')>=0||u.indexOf('WARN')>=0)return 'ln-warn';"
+    "if(u.indexOf('[I]')>=0||u.indexOf('CONNECTED')>=0||u.indexOf('SUCCESS')>=0)return 'ln-ok';"
+    "return 'ln-info';}"
+    "function fmtBytes(b){if(b==null||isNaN(b))return '—';b=Number(b);"
+    "if(b>=1048576)return(b/1048576).toFixed(2)+' MB';if(b>=1024)return(b/1024).toFixed(1)+' kB';return b+' B';}"
+    "function fmtUp(s){s=Number(s)||0;var d=Math.floor(s/86400);s-=d*86400;var h=Math.floor(s/3600);s-=h*3600;var m=Math.floor(s/60);s-=m*60;"
+    "return(d?d+'д ':'')+h+'ч '+m+'м '+Math.floor(s)+'с';}"
+    "async function loadLog(){"
+    "var c=new AbortController();var to=setTimeout(function(){c.abort();},2500);"
+    "try{"
+    "var r=await fetch('/api/log/esp32',{signal:c.signal});"
+    "clearTimeout(to);"
+    "var txt=await r.text();"
+    "var lines=txt.split(/\\r?\\n/);"
+    "document.getElementById('m_lines').textContent=lines.filter(function(x){return x.length;}).length;"
+    "document.getElementById('m_size').textContent=fmtBytes(txt.length);"
+    "var v=document.getElementById('logview');"
+    "var follow=document.getElementById('follow').checked;"
+    "var html='';for(var i=0;i<lines.length;i++){var ln=lines[i];if(!ln)continue;"
+    "var cls=classify(ln);html+='<span class=\"'+cls+'\">'+ln.replace(/[<>&]/g,function(c){return({'<':'&lt;','>':'&gt;','&':'&amp;'})[c];})+'</span>\\n';}"
+    "v.innerHTML=html||'<span class=\"muted\">(пусто)</span>';"
+    "if(follow)v.scrollTop=v.scrollHeight;"
+    "document.getElementById('ts').textContent='(обновлено '+new Date().toLocaleTimeString()+')';"
+    "}catch(e){clearTimeout(to);document.getElementById('logview').innerHTML='<span class=\"ln-err\">Ошибка загрузки: '+e+'</span>';}"
+    "try{var s=await (await fetch('/api/status',{cache:'no-store'})).json();"
+    "document.getElementById('m_up').textContent=fmtUp(s.uptime);"
+    "document.getElementById('m_heap').textContent=fmtBytes(s.free_heap);"
+    "document.getElementById('m_temp').textContent=(s.chip_temp_c!=null?s.chip_temp_c.toFixed(1)+' °C':'—');"
+    "document.getElementById('m_rssi').textContent=(s.rssi_now!=null?s.rssi_now+' dBm':'—');"
+    "}catch(e){}}"
+    "loadLog();"
+    "setInterval(function(){if(!document.hidden&&document.getElementById('auto').checked)loadLog();},3000);"
+    "</script></body></html>";
+
+static void handleEsp32LogPage(AsyncWebServerRequest* req) {
+    AsyncWebServerResponse* r = req->beginResponse_P(200, "text/html; charset=utf-8", kEspLogPageHtml);
+    req->send(r);
+}
+
 /* ========== Статические PNG из LittleFS ========== */
 static void handleBridgePng(AsyncWebServerRequest* req) {
     String uri = req->url();
@@ -694,6 +1026,8 @@ void webSetup(void) {
     s_server->on("/",                   HTTP_GET, handleRoot);
     s_server->on("/params",             HTTP_GET, handleParamsPage);
     s_server->on("/bridge",             HTTP_GET, handleBridgePage);
+    s_server->on("/log",                HTTP_GET, handleLogPage);
+    s_server->on("/esp32log",           HTTP_GET, handleEsp32LogPage);
     s_server->on("/smd",                HTTP_GET, [](AsyncWebServerRequest* req) {
         AsyncWebServerResponse* r = req->beginResponse(302, "text/plain", "");
         r->addHeader("Location", "/bridge");
@@ -714,6 +1048,7 @@ void webSetup(void) {
     s_server->on("/api/log",            HTTP_GET, handleApiLog);
     s_server->on("/api/log/file",       HTTP_GET, handleApiLogFile);
     s_server->on("/api/log/esp32",      HTTP_GET, handleApiLogEsp32);
+    s_server->on("/api/log/samples",    HTTP_GET, handleApiLogSamples);
 
     s_server->on("/api/settings",       HTTP_GET, handleApiSettingsGet);
     s_server->on("/api/settings",       HTTP_POST,

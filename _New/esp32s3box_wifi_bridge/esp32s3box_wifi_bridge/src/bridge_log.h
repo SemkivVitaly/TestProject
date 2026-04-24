@@ -22,6 +22,8 @@ void bridgeLogUpdateStats(uint32_t sent, uint32_t received, uint32_t lost, uint3
 void bridgeLogUpdateRssi(int8_t rssi_dbm);              /* Обновить уровень сигнала Wi‑Fi (dBm). */
 void bridgeLogSetLastRx(const uint8_t* data, uint16_t len);  /* Сохранить образец последнего принятого пакета. */
 void bridgeLogSetLastTx(const uint8_t* data, uint16_t len); /* Сохранить образец последнего отправленного. */
+uint16_t bridgeLogGetLastRxSample(uint8_t* buf, uint16_t bufSize); /* Скопировать последний RX, вернуть длину. */
+uint16_t bridgeLogGetLastTxSample(uint8_t* buf, uint16_t bufSize); /* Скопировать последний TX, вернуть длину. */
 size_t bridgeLogGetText(char* buf, size_t bufSize);      /* Сформировать полный текст лога в buf; возвращает длину. */
 void bridgeLogSetLastError(const char* err);
 void bridgeLogGetLastError(char* buf, size_t bufSize);    /* Последняя ошибка (для /api/status). */

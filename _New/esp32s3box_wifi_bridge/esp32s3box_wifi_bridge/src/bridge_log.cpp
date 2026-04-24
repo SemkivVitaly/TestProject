@@ -117,6 +117,20 @@ void bridgeLogSetLastTx(const uint8_t* data, uint16_t len) {
     memcpy(s_txSample, data, s_txLen);
 }
 
+uint16_t bridgeLogGetLastRxSample(uint8_t* buf, uint16_t bufSize) {
+    if (!buf || bufSize == 0) return 0;
+    uint16_t n = s_rxLen < bufSize ? s_rxLen : bufSize;
+    memcpy(buf, s_rxSample, n);
+    return n;
+}
+
+uint16_t bridgeLogGetLastTxSample(uint8_t* buf, uint16_t bufSize) {
+    if (!buf || bufSize == 0) return 0;
+    uint16_t n = s_txLen < bufSize ? s_txLen : bufSize;
+    memcpy(buf, s_txSample, n);
+    return n;
+}
+
 void bridgeLogSetLastError(const char* err) {
     if (!err) return;
     strncpy(s_lastError, err, LAST_ERROR_LEN - 1);
