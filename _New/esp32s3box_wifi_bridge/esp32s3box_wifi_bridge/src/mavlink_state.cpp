@@ -72,6 +72,160 @@ static uint16_t s_prevParseErrSnapshot = 0;
 static const uint8_t MAVLINK_GCS_SYSID = 255;
 static const uint8_t MAVLINK_GCS_COMPID = 190;
 
+/* --------- Запросы Mission Planner (GCS→UART) и ответы автопилота --------- */
+std::atomic<uint64_t> gcsMavRequestsTx{0};
+std::atomic<uint64_t> gcsMavRequestsOk{0};
+std::atomic<uint64_t> gcsMavRequestsFail{0};
+
+#define GCS_PENDING_MAX 16
+#define GCS_ACK_TIMEOUT_MS 8000U
+#ifndef MAV_RESULT_IN_PROGRESS
+#define MAV_RESULT_IN_PROGRESS 5
+#endif
+
+enum GcsPendingKind : uint8_t {
+    GCS_PK_PARAM_READ = 0,
+    GCS_PK_PARAM_SET = 1,
+    GCS_PK_CMD_LONG = 2,
+    GCS_PK_CMD_INT = 3,
+};
+
+struct GcsPendingSlot {
+    uint32_t t_ms;
+    uint8_t kind;
+    uint8_t pad;
+    uint16_t mav_cmd;
+    char param_id[17];
+};
+
+static GcsPendingSlot s_gcsPending[GCS_PENDING_MAX];
+static uint8_t s_gcsPendingN = 0;
+static portMUX_TYPE s_gcsPendingMux = portMUX_INITIALIZER_UNLOCKED;
+
+static void gcsPendingPushLocked(const GcsPendingSlot& slot) {
+    if (s_gcsPendingN >= GCS_PENDING_MAX) {
+        gcsMavRequestsFail.fetch_add(1, std::memory_order_relaxed);
+        memmove(&s_gcsPending[0], &s_gcsPending[1], (GCS_PENDING_MAX - 1) * sizeof(GcsPendingSlot));
+        s_gcsPendingN = (uint8_t)(GCS_PENDING_MAX - 1);
+    }
+    s_gcsPending[s_gcsPendingN++] = slot;
+}
+
+static void gcsPendingPush(const GcsPendingSlot& slot) {
+    portENTER_CRITICAL(&s_gcsPendingMux);
+    gcsPendingPushLocked(slot);
+    portEXIT_CRITICAL(&s_gcsPendingMux);
+    gcsMavRequestsTx.fetch_add(1, std::memory_order_relaxed);
+}
+
+static void gcsTryMatchParamValue(const mavlink_param_value_t* pv) {
+    portENTER_CRITICAL(&s_gcsPendingMux);
+    for (uint8_t i = 0; i < s_gcsPendingN; i++) {
+        if (s_gcsPending[i].kind != GCS_PK_PARAM_READ && s_gcsPending[i].kind != GCS_PK_PARAM_SET)
+            continue;
+        if (memcmp(s_gcsPending[i].param_id, pv->param_id, 16) != 0)
+            continue;
+        memmove(&s_gcsPending[i], &s_gcsPending[i + 1], (s_gcsPendingN - i - 1) * sizeof(GcsPendingSlot));
+        s_gcsPendingN--;
+        portEXIT_CRITICAL(&s_gcsPendingMux);
+        gcsMavRequestsOk.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    portEXIT_CRITICAL(&s_gcsPendingMux);
+}
+
+static void gcsTryMatchCommandAck(uint16_t cmd, uint8_t result, uint8_t targSys) {
+    if (result == MAV_RESULT_IN_PROGRESS)
+        return;
+    if (targSys != 0 && targSys != MAVLINK_GCS_SYSID)
+        return;
+    portENTER_CRITICAL(&s_gcsPendingMux);
+    for (uint8_t i = 0; i < s_gcsPendingN; i++) {
+        if (s_gcsPending[i].kind != GCS_PK_CMD_LONG && s_gcsPending[i].kind != GCS_PK_CMD_INT)
+            continue;
+        if (s_gcsPending[i].mav_cmd != cmd)
+            continue;
+        memmove(&s_gcsPending[i], &s_gcsPending[i + 1], (s_gcsPendingN - i - 1) * sizeof(GcsPendingSlot));
+        s_gcsPendingN--;
+        portEXIT_CRITICAL(&s_gcsPendingMux);
+        if (result == 0)
+            gcsMavRequestsOk.fetch_add(1, std::memory_order_relaxed);
+        else
+            gcsMavRequestsFail.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+    portEXIT_CRITICAL(&s_gcsPendingMux);
+}
+
+void mavlinkGcsPendingTick(void) {
+    uint32_t now = millis();
+    portENTER_CRITICAL(&s_gcsPendingMux);
+    uint8_t w = 0;
+    for (uint8_t r = 0; r < s_gcsPendingN; r++) {
+        if ((uint32_t)(now - s_gcsPending[r].t_ms) >= GCS_ACK_TIMEOUT_MS) {
+            portEXIT_CRITICAL(&s_gcsPendingMux);
+            gcsMavRequestsFail.fetch_add(1, std::memory_order_relaxed);
+            portENTER_CRITICAL(&s_gcsPendingMux);
+            continue;
+        }
+        if (w != r)
+            s_gcsPending[w] = s_gcsPending[r];
+        w++;
+    }
+    s_gcsPendingN = w;
+    portEXIT_CRITICAL(&s_gcsPendingMux);
+}
+
+void mavlinkScanGcsTxBytes(const uint8_t* data, size_t len) {
+    mavlink_message_t gm;
+    static mavlink_status_t st_gcs;
+    for (size_t i = 0; i < len; i++) {
+        if (!mavlink_parse_char(MAVLINK_COMM_1, data[i], &gm, &st_gcs))
+            continue;
+        GcsPendingSlot slot;
+        memset(&slot, 0, sizeof(slot));
+        slot.t_ms = millis();
+        switch (gm.msgid) {
+        case MAVLINK_MSG_ID_PARAM_REQUEST_READ: {
+            mavlink_param_request_read_t pr;
+            mavlink_msg_param_request_read_decode(&gm, &pr);
+            memcpy(slot.param_id, pr.param_id, 16);
+            slot.param_id[16] = '\0';
+            slot.kind = GCS_PK_PARAM_READ;
+            gcsPendingPush(slot);
+            break;
+        }
+        case MAVLINK_MSG_ID_PARAM_SET: {
+            mavlink_param_set_t ps;
+            mavlink_msg_param_set_decode(&gm, &ps);
+            memcpy(slot.param_id, ps.param_id, 16);
+            slot.param_id[16] = '\0';
+            slot.kind = GCS_PK_PARAM_SET;
+            gcsPendingPush(slot);
+            break;
+        }
+        case MAVLINK_MSG_ID_COMMAND_LONG: {
+            mavlink_command_long_t cl;
+            mavlink_msg_command_long_decode(&gm, &cl);
+            slot.kind = GCS_PK_CMD_LONG;
+            slot.mav_cmd = cl.command;
+            gcsPendingPush(slot);
+            break;
+        }
+        case MAVLINK_MSG_ID_COMMAND_INT: {
+            mavlink_command_int_t ci;
+            mavlink_msg_command_int_decode(&gm, &ci);
+            slot.kind = GCS_PK_CMD_INT;
+            slot.mav_cmd = ci.command;
+            gcsPendingPush(slot);
+            break;
+        }
+        default:
+            break;
+        }
+    }
+}
+
 void mavlinkInitLog(void) {
     memset(mavlinkLog, 0, sizeof(mavlinkLog));
 }
@@ -193,6 +347,7 @@ void mavlinkProcessBytes(const uint8_t* data, uint16_t len) {
             case MAVLINK_MSG_ID_PARAM_VALUE: {
                 mavlink_param_value_t pv;
                 mavlink_msg_param_value_decode(&msg, &pv);
+                gcsTryMatchParamValue(&pv);
                 pv.param_id[15] = '\0';
                 if (strcmp(pv.param_id, "SERVO1_REVERS") == 0 || strcmp(pv.param_id, "SERVO1_REVERSED") == 0) {
                     paramServo1Revers = pv.param_value;
@@ -207,6 +362,12 @@ void mavlinkProcessBytes(const uint8_t* data, uint16_t len) {
                     paramServo4TrimKnown = true;
                     mavlinkAddLog("RX PARAM_VALUE SERVO4_TRIM");
                 }
+                break;
+            }
+            case MAVLINK_MSG_ID_COMMAND_ACK: {
+                mavlink_command_ack_t ack;
+                mavlink_msg_command_ack_decode(&msg, &ack);
+                gcsTryMatchCommandAck(ack.command, ack.result, ack.target_system);
                 break;
             }
             default:

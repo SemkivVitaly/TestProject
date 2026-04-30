@@ -556,6 +556,7 @@ void loop() {
 
 #ifdef WEB_SERVER
     mavlinkCheckDisconnect();
+    mavlinkGcsPendingTick();
     if (digitalRead(BTN_PIN) == LOW) {
         static uint32_t lastBtn = 0;
         if (millis() - lastBtn > 300) {

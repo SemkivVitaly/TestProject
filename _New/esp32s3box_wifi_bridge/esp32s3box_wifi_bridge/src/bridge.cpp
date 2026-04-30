@@ -21,6 +21,7 @@
 #include "bridge.h"
 #include "bridge_log.h"
 #include "esp_log.h"
+#include "mavlink_state.h"
 
 #include <atomic>
 #include <freertos/FreeRTOS.h>
@@ -142,6 +143,7 @@ static void onTcpData(void* arg, AsyncClient* c, void* data, size_t len) {
     /* SerialUART.write блокирует только если TX-буфер переполнен; выставлен 8 КБ. */
     uartBytesTx.fetch_add((uint64_t)len, std::memory_order_relaxed);
     bridgeLogSetLastTx((const uint8_t*)data, (uint16_t)(len > 0xFFFF ? 0xFFFF : len));
+    mavlinkScanGcsTxBytes((const uint8_t*)data, len);
     SerialUART.write((const uint8_t*)data, len);
 }
 
@@ -167,7 +169,7 @@ static void onNewTcpClient(void* arg, AsyncClient* c) {
     }
     if (free_idx < 0) {
         espLogPrintf("[bridge] TCP reject (no free slots) from %s", c->remoteIP().toString().c_str());
-        c->close(true);
+        c->close();
         delete c;
         return;
     }
@@ -176,7 +178,7 @@ static void onNewTcpClient(void* arg, AsyncClient* c) {
         s->txBuf = xStreamBufferCreate(TCP_SLOT_TX_BUFFER, 1);
         if (!s->txBuf) {
             espLogPrintf("[bridge] TCP slot %d: no heap for stream buffer", free_idx);
-            c->close(true);
+            c->close();
             delete c;
             return;
         }
@@ -238,6 +240,7 @@ static void handleUdpPacket(AsyncUDPPacket& pkt) {
         espLogPrintf("[bridge] UDP client set %s", s);
     }
     bridgeLogSetLastTx(pkt.data(), (uint16_t)(n > 0xFFFF ? 0xFFFF : n));
+    mavlinkScanGcsTxBytes(pkt.data(), n);
     /* Пишем в UART. AsyncUDP колбек крутится в lwip-task; SerialUART.write thread-safe. */
     SerialUART.write(pkt.data(), n);
 }

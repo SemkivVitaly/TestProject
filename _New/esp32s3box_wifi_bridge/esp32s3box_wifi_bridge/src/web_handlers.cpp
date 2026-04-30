@@ -137,10 +137,11 @@ static const char PROGMEM kParamsHtml[] =
     "function load(){"
     "var c=new AbortController();var to=setTimeout(function(){c.abort();},1800);"
     "fetch('/api/status',{signal:c.signal}).then(function(r){clearTimeout(to);return r.json();}).then(function(j){"
-    "var lossTxt=(j.mavlink_rx_lost||0)+' (' + ((j.mavlink_loss_pct||0).toFixed?j.mavlink_loss_pct.toFixed(2):j.mavlink_loss_pct) + '%)';"
+    "var lossTxt=(j.mavlink_rx_lost||0)+' (' + ((j.mavlink_seq_loss_pct||0).toFixed?j.mavlink_seq_loss_pct.toFixed(2):j.mavlink_seq_loss_pct) + '% телем.)';"
+    "var gcsTxt='Запросы MP: '+(j.mavlink_gcs_req_tx||0)+', OK '+(j.mavlink_gcs_req_ok||0)+', отказ '+(j.mavlink_gcs_req_fail||0)+', отказов '+((j.mavlink_loss_pct||0).toFixed?j.mavlink_loss_pct.toFixed(2):j.mavlink_loss_pct)+'%';"
     "document.getElementById('conn').innerHTML='Связь: '+(j.connected?'<span class=ok>Активна</span>':'<span class=no>Нет</span>')+"
     "'<br><span style=\"font-size:0.85rem;color:#ccc;display:inline-block;margin-top:6px;\">'+"
-    "'MAVLink RX: '+(j.mavlink_rx_pkts||0)+' пкт | Потери (seq): '+lossTxt+' | Parse err: '+(j.mavlink_parse_err||0)+"
+    "'MAVLink RX: '+(j.mavlink_rx_pkts||0)+' пкт | Потери (seq): '+lossTxt+' | '+gcsTxt+' | Parse err: '+(j.mavlink_parse_err||0)+"
     "'<br>Период HB: '+(j.heartbeat_interval_ms||'—')+' мс | С последн. HEARTBEAT: '+(j.connected?j.heartbeat_age_ms+' мс':'—')+"
     "' | Bridge TX: '+(j.mavlink_bridge_tx_pkts||0)+' пкт</span>';"
     "if(!window.paramsFrozen){document.getElementById('v1').value=j.SERVO1_REVERSED; document.getElementById('v2').value=j.SERVO3_TRIM; document.getElementById('v3').value=j.SERVO4_TRIM;}"
@@ -169,12 +170,17 @@ static void handleApiStatus(AsyncWebServerRequest* req) {
     }
     size_t p = 0;
 
-    /* MAVLink реальные потери (по seq-gap) и parse_error отдельно. */
+    /* mavlink_loss_pct / packet_loss_pct — доля неуспешных завершённых запросов MP (GCS→UART). */
     uint64_t rx   = mavlinkRxPkts.load();
     uint64_t lost = mavlinkRxLost.load();
     uint64_t perr = mavlinkParseErr.load();
     uint64_t btx  = mavlinkBridgeTxPkts.load();
-    float lossPct = (rx + lost > 0) ? 100.0f * (float)lost / (float)(rx + lost) : 0.0f;
+    float seqLossPct = (rx + lost > 0) ? 100.0f * (float)lost / (float)(rx + lost) : 0.0f;
+    uint64_t gtx = gcsMavRequestsTx.load();
+    uint64_t gok = gcsMavRequestsOk.load();
+    uint64_t gfail = gcsMavRequestsFail.load();
+    float gcsLossPct =
+        (gok + gfail > 0) ? (100.0f * (float)gfail / (float)(gok + gfail)) : 0.0f;
 
     uint32_t hbAge = 0;
     if (mavlinkConnected && lastHeartbeatMs != 0) {
@@ -218,6 +224,10 @@ static void handleApiStatus(AsyncWebServerRequest* req) {
         "\"mavlink_parse_err\":%llu,"
         "\"mavlink_bridge_tx_pkts\":%llu,"
         "\"mavlink_loss_pct\":%.2f,"
+        "\"mavlink_seq_loss_pct\":%.2f,"
+        "\"mavlink_gcs_req_tx\":%llu,"
+        "\"mavlink_gcs_req_ok\":%llu,"
+        "\"mavlink_gcs_req_fail\":%llu,"
         /* Совместимость со старым UI (чтобы не ломать скрипты): */
         "\"packets_rx\":%llu,"
         "\"packets_tx\":%llu,"
@@ -256,11 +266,15 @@ static void handleApiStatus(AsyncWebServerRequest* req) {
         (unsigned long long)lost,
         (unsigned long long)perr,
         (unsigned long long)btx,
-        (double)lossPct,
+        (double)gcsLossPct,
+        (double)seqLossPct,
+        (unsigned long long)gtx,
+        (unsigned long long)gok,
+        (unsigned long long)gfail,
         (unsigned long long)rx,
         (unsigned long long)btx,
         (unsigned long long)lost,
-        (double)lossPct,
+        (double)gcsLossPct,
         (unsigned long long)rx,
         (unsigned long long)uartBytesRx.load(),
         (unsigned long long)uartBytesTx.load(),
@@ -315,10 +329,14 @@ static void handleApiLink(AsyncWebServerRequest* req) {
     uint64_t lost = mavlinkRxLost.load();
     uint64_t perr = mavlinkParseErr.load();
     uint64_t btx  = mavlinkBridgeTxPkts.load();
-    float lossPct = (rx + lost > 0) ? 100.0f * (float)lost / (float)(rx + lost) : 0.0f;
+    float seqLossPct = (rx + lost > 0) ? 100.0f * (float)lost / (float)(rx + lost) : 0.0f;
+    uint64_t gok = gcsMavRequestsOk.load();
+    uint64_t gfail = gcsMavRequestsFail.load();
+    float gcsLossPct =
+        (gok + gfail > 0) ? (100.0f * (float)gfail / (float)(gok + gfail)) : 0.0f;
     uint32_t hbAge = (mavlinkConnected && lastHeartbeatMs) ? (millis() - lastHeartbeatMs) : 0;
 
-    char buf[768];
+    char buf[896];
     int p = snprintf(buf, sizeof(buf),
         "{\"connected\":%s,"
         "\"packets_sent\":%llu,"
@@ -326,6 +344,10 @@ static void handleApiLink(AsyncWebServerRequest* req) {
         "\"packets_processed\":%llu,"
         "\"packet_drops\":%llu,"
         "\"packet_loss_pct\":%.2f,"
+        "\"mavlink_seq_loss_pct\":%.2f,"
+        "\"mavlink_gcs_req_tx\":%llu,"
+        "\"mavlink_gcs_req_ok\":%llu,"
+        "\"mavlink_gcs_req_fail\":%llu,"
         "\"mavlink_parse_err\":%llu,"
         "\"heartbeat_age_ms\":%lu,"
         "\"heartbeat_interval_ms\":%lu,"
@@ -337,7 +359,11 @@ static void handleApiLink(AsyncWebServerRequest* req) {
         (unsigned long long)rx,
         (unsigned long long)rx,
         (unsigned long long)lost,
-        (double)lossPct,
+        (double)gcsLossPct,
+        (double)seqLossPct,
+        (unsigned long long)gcsMavRequestsTx.load(),
+        (unsigned long long)gok,
+        (unsigned long long)gfail,
         (unsigned long long)perr,
         (unsigned long)hbAge,
         (unsigned long)mavlinkHeartbeatIntervalMs,
@@ -801,7 +827,8 @@ static const char PROGMEM kLogPageHtml[] =
     "<div class='k'>Отправлено в GCS (TX)</div><div class='v' id='p_tx'>—</div>"
     "<div class='k'>Потеряно (seq-gap)</div><div class='v' id='p_lost'>—</div>"
     "<div class='k'>Всего обработано</div><div class='v' id='p_total'>—</div>"
-    "<div class='k'>Доля потерь</div><div class='v' id='p_lossp'>—</div>"
+    "<div class='k'>Потери телеметрии (seq)</div><div class='v' id='p_seq_loss'>—</div>"
+    "<div class='k'>Доля отказов (запросы MP)</div><div class='v' id='p_lossp'>—</div>"
     "</div></div>"
 
     "<div class='card'><h2>UART (автопилот)</h2>"
@@ -873,8 +900,11 @@ static const char PROGMEM kLogPageHtml[] =
     "ln('');ln('ПАКЕТЫ MAVLINK');"
     "if(st){kv('Получено RX',fmt(st.mavlink_rx_pkts));kv('Отправлено в GCS (TX)',fmt(st.mavlink_bridge_tx_pkts));"
     "kv('Потеряно (seq-gap)',fmt(st.mavlink_rx_lost));kv('Всего обработано',fmt((Number(st.mavlink_rx_pkts||0)+Number(st.mavlink_rx_lost||0))));"
-    "var lp=st.mavlink_loss_pct!=null?Number(st.mavlink_loss_pct):0;kv('Доля потерь',isNaN(lp)?'—':lp.toFixed(2)+'% '+(lp<5?'OK':'HIGH'));}else{"
-    "kv('Получено RX','—');kv('Отправлено в GCS (TX)','—');kv('Потеряно (seq-gap)','—');kv('Всего обработано','—');kv('Доля потерь','—');}"
+    "var sp=st.mavlink_seq_loss_pct!=null?Number(st.mavlink_seq_loss_pct):NaN;kv('Потери телеметрии (seq)',isNaN(sp)?'—':sp.toFixed(2)+'%');"
+    "kv('Запросы MP, всего',fmt(st.mavlink_gcs_req_tx));kv('Запросы MP, успешно',fmt(st.mavlink_gcs_req_ok));kv('Запросы MP, отказ/таймаут',fmt(st.mavlink_gcs_req_fail));"
+    "var lp=st.mavlink_loss_pct!=null?Number(st.mavlink_loss_pct):0;kv('Доля отказов (запросы MP)',isNaN(lp)?'—':lp.toFixed(2)+'% '+(lp<5?'OK':'HIGH'));}else{"
+    "kv('Получено RX','—');kv('Отправлено в GCS (TX)','—');kv('Потеряно (seq-gap)','—');kv('Всего обработано','—');"
+    "kv('Потери телеметрии (seq)','—');kv('Запросы MP, всего','—');kv('Запросы MP, успешно','—');kv('Запросы MP, отказ/таймаут','—');kv('Доля отказов (запросы MP)','—');}"
     "ln('');ln('UART (АВТОПИЛОТ)');"
     "if(st){kv('Байт RX / TX',fmtBytes(st.uart_bytes_rx)+' / '+fmtBytes(st.uart_bytes_tx));"
     "kv('Overruns',String(st.uart_overruns)+' '+(st.uart_overruns?'WARN':'OK'));"
@@ -918,6 +948,8 @@ static const char PROGMEM kLogPageHtml[] =
     "document.getElementById('p_tx').textContent=fmt(st.mavlink_bridge_tx_pkts);"
     "document.getElementById('p_lost').textContent=fmt(st.mavlink_rx_lost);"
     "document.getElementById('p_total').textContent=fmt((Number(st.mavlink_rx_pkts||0)+Number(st.mavlink_rx_lost||0)));"
+    "var sp=st.mavlink_seq_loss_pct!=null?Number(st.mavlink_seq_loss_pct):0;"
+    "document.getElementById('p_seq_loss').innerHTML=sp.toFixed(2)+'% '+pill(sp<5,sp<5?'OK':'HIGH');"
     "var lp=st.mavlink_loss_pct!=null?Number(st.mavlink_loss_pct):0;"
     "document.getElementById('p_lossp').innerHTML=lp.toFixed(2)+'% '+pill(lp<5,lp<5?'OK':'HIGH');"
     "document.getElementById('uart_bytes').textContent=fmtBytes(st.uart_bytes_rx)+' / '+fmtBytes(st.uart_bytes_tx);"

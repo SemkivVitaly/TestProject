@@ -11,9 +11,11 @@
  *   — loop() в main.cpp: mavlinkCheckDisconnect() для таймаута HEARTBEAT.
  *   — web_handlers: mavlinkRequestServoParams(), mavlinkSendParamSet(); читает mavlinkConnected, paramServo* и т.д.
  *
- * ПОТЕРИ MAVLink:
- *   Настоящие потери определяются по gap в последовательности seq-поля MAVLink-пакета (msg->seq).
- *   status.packet_rx_drop_count даёт только per-byte parse error — его аккумулируем отдельно как mavlinkParseErr.
+ * ПОТЕРИ / ЗАПРОСЫ:
+ *   Телеметрия: gap в последовательности seq на потоке UART←автопилот — mavlinkRxLost, доля в mavlink_seq_loss_pct.
+ *   Запросы Mission Planner (GCS→UART): PARAM_* / COMMAND_* считаются в gcsMavRequestsTx; ответ PARAM_VALUE /
+ *   COMMAND_ACK (кроме IN_PROGRESS) закрывает ожидание — gcsMavRequestsOk / Fail; доля отказов в mavlink_loss_pct.
+ *   status.packet_rx_drop_count — per-byte parse error, аккумулируем как mavlinkParseErr.
  */
 #ifndef MAVLINK_STATE_H
 #define MAVLINK_STATE_H
@@ -47,6 +49,10 @@ extern std::atomic<uint64_t> mavlinkRxLost;       /* Потеряно пакет
 extern std::atomic<uint64_t> mavlinkParseErr;     /* Накопленные parse_error (CRC/framing) — не пакеты, а события. */
 extern std::atomic<uint64_t> mavlinkBridgeTxPkts; /* Пакеты, сгенерированные самим мостом (PARAM_REQUEST/SET). */
 extern std::atomic<uint64_t> mavlinkBytesFromUart; /* Байт, ушедших в парсер (обычно = uartBytesRx). */
+/** Запросы от GCS (Mission Planner/QGC) по TCP/UDP→UART: PARAM_READ/SET, COMMAND_LONG/INT. */
+extern std::atomic<uint64_t> gcsMavRequestsTx;
+extern std::atomic<uint64_t> gcsMavRequestsOk;   /* Успешный ответ: PARAM_VALUE по имени или COMMAND_ACK ACCEPTED. */
+extern std::atomic<uint64_t> gcsMavRequestsFail; /* Отказ/таймаут COMMAND_ACK или ожидание PARAM. */
 #endif
 
 /** Счётчики приёма/передачи по типу сообщения (msgid 0..255). Используются в едином логе. */
@@ -70,6 +76,10 @@ void mavlinkSendParamRequest(const char* param_id);  /* Отправить PARAM
 void mavlinkRequestServoParams(void);  /* Запросить SERVO1_REVERSED, SERVO3_TRIM, SERVO4_TRIM. */
 void mavlinkSendParamSet(const char* param_id, float value);  /* Отправить PARAM_SET в UART. */
 void mavlinkAddLog(const char* event);  /* Добавить запись в кольцевой лог. */
+/** Разбор исходящего потока GCS→UART (TCP/UDP). Вызывать из AsyncTCP / lwip до SerialUART.write. */
+void mavlinkScanGcsTxBytes(const uint8_t* data, size_t len);
+/** Таймауты ожиданий ответов на запросы GCS; вызывать из loop() периодически. */
+void mavlinkGcsPendingTick(void);
 
 #ifdef __cplusplus
 }

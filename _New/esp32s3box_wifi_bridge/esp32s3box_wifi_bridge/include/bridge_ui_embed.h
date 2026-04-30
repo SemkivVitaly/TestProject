@@ -423,10 +423,12 @@ static const char BRIDGE_UI_HTML[] PROGMEM = R"BRIDGE_UI_RAW(<!DOCTYPE html>
         clearTimeout(to);
         var el=document.getElementById("link_metrics");
         if(!el) return;
-        var lossPct=(j.packet_loss_pct!=null?(j.packet_loss_pct.toFixed?j.packet_loss_pct.toFixed(2):j.packet_loss_pct):0);
+        var seqPct=(j.mavlink_seq_loss_pct!=null?(j.mavlink_seq_loss_pct.toFixed?j.mavlink_seq_loss_pct.toFixed(2):j.mavlink_seq_loss_pct):0);
+        var gcsPct=(j.packet_loss_pct!=null?(j.packet_loss_pct.toFixed?j.packet_loss_pct.toFixed(2):j.packet_loss_pct):0);
         el.innerHTML=
           "MAVLink RX: "+(j.packets_received||0)+" пкт"+
-          " | Потери (seq-gap): "+(j.packet_drops||0)+" ("+lossPct+"%)"+
+          " | Потери телем. (seq): "+(j.packet_drops||0)+" ("+seqPct+"%)"+
+          " | Запросы MP: TX "+(j.mavlink_gcs_req_tx||0)+", OK "+(j.mavlink_gcs_req_ok||0)+", отказ "+(j.mavlink_gcs_req_fail||0)+" ("+gcsPct+"% отказов)"+
           " | Parse err: "+(j.mavlink_parse_err||0)+
           "<br>Bridge TX: "+(j.packets_sent||0)+" пкт"+
           " | Период HB: "+(j.heartbeat_interval_ms||"—")+" мс"+
