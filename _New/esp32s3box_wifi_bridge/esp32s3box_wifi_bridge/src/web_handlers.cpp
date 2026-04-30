@@ -94,7 +94,7 @@ static const char PROGMEM kRootHtml[] =
     "</div></body></html>";
 
 static void handleRoot(AsyncWebServerRequest* req) {
-    AsyncWebServerResponse* r = req->beginResponse_P(200, "text/html; charset=utf-8", kRootHtml);
+    AsyncWebServerResponse* r = req->beginResponse(200, "text/html; charset=utf-8", kRootHtml);
     req->send(r);
 }
 
@@ -154,7 +154,7 @@ static const char PROGMEM kParamsHtml[] =
     "</script></body></html>";
 
 static void handleParamsPage(AsyncWebServerRequest* req) {
-    AsyncWebServerResponse* r = req->beginResponse_P(200, "text/html; charset=utf-8", kParamsHtml);
+    AsyncWebServerResponse* r = req->beginResponse(200, "text/html; charset=utf-8", kParamsHtml);
     req->send(r);
 }
 
@@ -433,7 +433,7 @@ static void handleParamRequest(AsyncWebServerRequest* req) {
 /* ========== /bridge page ========== */
 static void handleBridgePage(AsyncWebServerRequest* req) {
 #ifdef BRIDGE_UI_EMBED_H
-    AsyncWebServerResponse* r = req->beginResponse_P(200, "text/html; charset=utf-8", (const uint8_t*)BRIDGE_UI_HTML, strlen_P((const char*)BRIDGE_UI_HTML));
+    AsyncWebServerResponse* r = req->beginResponse(200, "text/html; charset=utf-8", (const uint8_t*)BRIDGE_UI_HTML, strlen_P((const char*)BRIDGE_UI_HTML));
     req->send(r);
 #else
     if (!LittleFS.exists("/index.html")) {
@@ -594,7 +594,7 @@ static void handleApiUdpSetDone(AsyncWebServerRequest* req) {
         req->send(400, "application/json", "{\"ok\":false,\"error\":\"body required\"}");
         return;
     }
-    StaticJsonDocument<256> doc;
+    JsonDocument doc;
     DeserializationError err = deserializeJson(doc, ctx->buf, ctx->len);
     postJsonFree(req);
     if (err) {
@@ -846,46 +846,49 @@ static const char PROGMEM kLogPageHtml[] =
     "catch(e){clearTimeout(to);return'(ошибка загрузки)';}}"
     "function nextUnifiedFilename(){var k='unifiedLogDlCnt';var n=parseInt(localStorage.getItem(k)||'0',10)||0;n++;localStorage.setItem(k,String(n));"
     "return(n===1?'\xD0\x95\xD0\xB4\xD0\xB8\xD0\xBD\xD1\x8B\xD0\xB9 \xD0\xBB\xD0\xBE\xD0\xB3.txt':'\xD0\x95\xD0\xB4\xD0\xB8\xD0\xBD\xD1\x8B\xD0\xB9 \xD0\xBB\xD0\xBE\xD0\xB3 '+n+'.txt');}"
-    "function buildUnifiedReportText(st,inf,cli,smp,fileTxt,espTxt){var L=[],ln=function(x){L.push(x);},br=String.fromCharCode(10);"
-    "ln('\\xD0\\x95\\xD0\\xB4\\xD0\\xB8\\xD0\\xBD\\xD1\\x8B\\xD0\\xB9 \\xD0\\xBB\\xD0\\xBE\\xD0\\xB3 \\xE2\\x80\\x94 \\xD1\\x8D\\xD0\\xBA\\xD1\\x81\\xD0\\xBF\\xD0\\xBE\\xD1\\x80\\xD1\\x82');"
-    "ln('\\xD0\\xA1\\xD1\\x84\\xD0\\xBE\\xD1\\x80\\xD0\\xBC\\xD0\\xB8\\xD1\\x80\\xD0\\xBE\\xD0\\xB2\\xD0\\xB0\\xD0\\xBD\\xD0\\xBE: '+new Date().toLocaleString());ln('');"
-    "if(st){ln('=== \\xD0\\xA1\\xD0\\xBE\\xD0\\xB5\\xD0\\xB4\\xD0\\xB8\\xD0\\xBD\\xD0\\xB5\\xD0\\xBD\\xD0\\xB8\\xD0\\xB5 MAVLink / MissionPlanner ===');var c=!!st.connected;"
-    "ln('\\xD0\\xA1\\xD1\\x82\\xD0\\xB0\\xD1\\x82\\xD1\\x83\\xD1\\x81: '+(c?'\\xD0\\x9F\\xD0\\xBE\\xD0\\xB4\\xD0\\xBA\\xD0\\xBB\\xD1\\x8E\\xD1\\x87\\xD0\\xB5\\xD0\\xBD\\xD0\\xBE \\xD0\\xBA MissionPlanner/MAVLink':'\\xD0\\x9D\\xD0\\xB5\\xD1\\x82 HEARTBEAT'));"
-    "ln('\\xD0\\x9F\\xD0\\xBE\\xD1\\x81\\xD0\\xBB\\xD0\\xB5\\xD0\\xB4\\xD0\\xBD\\xD0\\xB8\\xD0\\xB9 HEARTBEAT: '+(c?fmtMs(st.heartbeat_age_ms):'\\xE2\\x80\\x94'));"
-    "ln('\\xD0\\x98\\xD0\\xBD\\xD1\\x82\\xD0\\xB5\\xD1\\x80\\xD0\\xB2\\xD0\\xB0\\xD0\\xBB HB: '+(st.heartbeat_interval_ms?fmtMs(st.heartbeat_interval_ms):'\\xE2\\x80\\x94'));"
-    "ln('\\xD0\\x9E\\xD1\\x88\\xD0\\xB8\\xD0\\xB1\\xD0\\xBE\\xD0\\xBA \\xD0\\xBF\\xD0\\xB0\\xD1\\x80\\xD1\\x81\\xD0\\xB8\\xD0\\xBD\\xD0\\xB3\\xD0\\xB0: '+fmt(st.mavlink_parse_err));"
-    "ln('\\xD0\\x9F\\xD0\\xBE\\xD1\\x81\\xD0\\xBB\\xD0\\xB5\\xD0\\xB4\\xD0\\xBD\\xD1\\x8F\\xD1\\x8F \\xD0\\xBE\\xD1\\x88\\xD0\\xB8\\xD0\\xB1\\xD0\\xBA\\xD0\\xB0: '+(st.last_error||'none'));ln('');}else{"
-    "ln('(/api/status \\xD0\\xBD\\xD0\\xB5\\xD0\\xB4\\xD0\\xBE\\xD1\\x81\\xD1\\x82\\xD1\\x83\\xD0\\xBF\\xD0\\xB5\\xD0\\xBD)');ln('');}"
-    "if(inf||st){ln('=== \\xD0\\xA3\\xD1\\x81\\xD1\\x82\\xD1\\x80\\xD0\\xBE\\xD0\\xB9\\xD1\\x81\\xD1\\x82\\xD0\\xB2\\xD0\\xBE ===');if(inf){"
-    "ln('\\xD0\\xA3\\xD0\\xBD\\xD0\\xB8\\xD0\\xBA\\xD0\\xB0\\xD0\\xBB\\xD1\\x8C\\xD0\\xBD\\xD1\\x8B\\xD0\\xB9 ID \\xD1\\x87\\xD0\\xB8\\xD0\\xBF\\xD0\\xB0: '+(inf.chip_uid||'\\xE2\\x80\\x94'));"
-    "ln('MAC: '+(inf.esp_mac||'\\xE2\\x80\\x94'));}if(st){ln('Uptime: '+fmtUp(st.uptime));"
-    "ln('\\xD0\\xA1\\xD0\\xB2\\xD0\\xBE\\xD0\\xB1\\xD0\\xBE\\xD0\\xB4\\xD0\\xBD\\xD1\\x8B\\xD0\\xB9 heap: '+fmtBytes(st.free_heap)+' (min '+fmtBytes(st.min_free_heap)+', max-\\xD0\\xB1\\xD0\\xBB\\xD0\\xBE\\xD0\\xBA '+fmtBytes(st.largest_free_block)+')');"
-    "ln('\\xD0\\xA2\\xD0\\xB5\\xD0\\xBC\\xD0\\xBF\\xD0\\xB5\\xD1\\x80\\xD0\\xB0\\xD1\\x82\\xD1\\x83\\xD1\\x80\\xD0\\xB0 \\xD1\\x87\\xD0\\xB8\\xD0\\xBF\\xD0\\xB0: '+(st.chip_temp_c!=null?st.chip_temp_c.toFixed(1)+' \\xC2\\xB0C':'\\xE2\\x80\\x94'));}ln('');}"
-    "if(st){ln('=== Wi-Fi / \\xD0\\xA1\\xD0\\xB8\\xD0\\xB3\\xD0\\xBD\\xD0\\xB0\\xD0\\xBB ===');"
-    "ln('RSSI (\\xD1\\x81\\xD0\\xB5\\xD0\\xB9\\xD1\\x87\\xD0\\xB0\\xD1\\x81): '+(st.rssi_now!=null?st.rssi_now+' dBm':'\\xE2\\x80\\x94'));"
-    "ln('\\xD0\\x9C\\xD0\\xB8\\xD0\\xBD / \\xD0\\x9C\\xD0\\xB0\\xD0\\xBA\\xD1\\x81 / \\xD0\\xA1\\xD1\\x80\\xD0\\xB5\\xD0\\xB4\\xD0\\xBD.: '+st.rssi_min+' / '+st.rssi_max+' / '+st.rssi_avg+' dBm');"
-    "ln('AP assoc / disassoc: '+(st.ap_assoc_total||0)+' / '+(st.ap_disassoc_total||0));ln('STA \\xD1\\x80\\xD0\\xB5\\xD0\\xBA\\xD0\\xBE\\xD0\\xBD\\xD0\\xBD\\xD0\\xB5\\xD0\\xBA\\xD1\\x82\\xD0\\xBE\\xD0\\xB2: '+fmt(st.sta_reconnects_total));ln('');}"
-    "if(cli){ln('=== \\xD0\\x9F\\xD0\\xBE\\xD0\\xB4\\xD0\\xBA\\xD0\\xBB\\xD1\\x8E\\xD1\\x87\\xD1\\x91\\xD0\\xBD\\xD0\\xBD\\xD1\\x8B\\xD0\\xB5 \\xD0\\xBA\\xD0\\xBB\\xD0\\xB8\\xD0\\xB5\\xD0\\xBD\\xD1\\x82\\xD1\\x8B ===');var n=0;if(cli.tcp){cli.tcp.forEach(function(t){"
-    "ln('TCP | '+t.peer+' | \\xD1\\x81\\xD0\\xBE\\xD0\\xB5\\xD0\\xB4\\xD0\\xB8\\xD0\\xBD\\xD0\\xB5\\xD0\\xBD\\xD0\\xB8\\xD0\\xB5 '+fmtMs(t.connected_ms)+' | \\xD0\\xB1\\xD0\\xB0\\xD0\\xB9\\xD1\\x82 \\xD0\\xB2/\\xD0\\xB8\\xD0\\xB7 ESP '+fmtBytes(t.bytes_in)+' / '+fmtBytes(t.bytes_out)+' | \\xD0\\xBE\\xD1\\x87\\xD0\\xB5\\xD1\\x80\\xD0\\xB5\\xD0\\xB4\\xD1\\x8C '+t.queue_used+'/'+t.queue_size+(t.drop_bytes?' drop '+t.drop_bytes:''));n++;});}"
-    "if(cli.udp){ln('UDP | '+cli.udp.peer+' | \\xD0\\xBF\\xD0\\xBE\\xD1\\x81\\xD0\\xBB. \\xD0\\xBF\\xD0\\xB0\\xD0\\xBA\\xD0\\xB5\\xD1\\x82 '+fmtMs(cli.udp.last_packet_ms)+' \\xD0\\xBD\\xD0\\xB0\\xD0\\xB7\\xD0\\xB0\\xD0\\xB4 | \\xD0\\xB1\\xD0\\xB0\\xD0\\xB9\\xD1\\x82 '+fmtBytes(cli.udp.bytes_in)+' / '+fmtBytes(cli.udp.bytes_out)+' | q \\xE2\\x80\\x94');n++;}"
-    "if(!n)ln('\\xD0\\x9A\\xD0\\xBB\\xD0\\xB8\\xD0\\xB5\\xD0\\xBD\\xD1\\x82\\xD1\\x8B \\xD0\\xBD\\xD0\\xB5 \\xD0\\xBF\\xD0\\xBE\\xD0\\xB4\\xD0\\xBA\\xD0\\xBB\\xD1\\x8E\\xD1\\x87\\xD0\\xB5\\xD0\\xBD\\xD1\\x8B');ln('');}else{"
-    "ln('(/api/clients недоступен)');ln('');}"
-    "if(st){ln('=== \\xD0\\x9F\\xD0\\xB0\\xD0\\xBA\\xD0\\xB5\\xD1\\x82\\xD1\\x8B MAVLink ===');ln('\\xD0\\x9F\\xD0\\xBE\\xD0\\xBB\\xD1\\x83\\xD1\\x87\\xD0\\xB5\\xD0\\xBD\\xD0\\xBE RX: '+fmt(st.mavlink_rx_pkts));"
-    "ln('\\xD0\\x9E\\xD1\\x82\\xD0\\xBF\\xD1\\x80\\xD0\\xB0\\xD0\\xB2\\xD0\\xBB\\xD0\\xB5\\xD0\\xBD\\xD0\\xBE \\xD0\\xB2 GCS (TX): '+fmt(st.mavlink_bridge_tx_pkts));"
-    "ln('\\xD0\\x9F\\xD0\\xBE\\xD1\\x82\\xD0\\xB5\\xD1\\x80\\xD1\\x8F\\xD0\\xBD\\xD0\\xBE (seq-gap): '+fmt(st.mavlink_rx_lost));"
-    "ln('\\xD0\\x92\\xD1\\x81\\xD0\\xB5\\xD0\\xB3\\xD0\\xBE \\xD0\\xBE\\xD0\\xB1\\xD1\\x80\\xD0\\xB0\\xD0\\xB1\\xD0\\xBE\\xD1\\x82\\xD0\\xB0\\xD0\\xBD\\xD0\\xBE: '+fmt((Number(st.mavlink_rx_pkts||0)+Number(st.mavlink_rx_lost||0))));"
-    "var lp=st.mavlink_loss_pct!=null?Number(st.mavlink_loss_pct):0;ln('\\xD0\\x94\\xD0\\xBE\\xD0\\xBB\\xD1\\x8F \\xD0\\xBF\\xD0\\xBE\\xD1\\x82\\xD0\\xB5\\xD1\\x80\\xD1\\x8C: '+lp.toFixed(2)+'% '+(lp<5?'OK':'HIGH'));ln('');"
-    "ln('=== UART (\\xD0\\xB0\\xD0\\xB2\\xD1\\x82\\xD0\\xBE\\xD0\\xBF\\xD0\\xB8\\xD0\\xBB\\xD0\\xBE\\xD1\\x82) ===');ln('\\xD0\\x91\\xD0\\xB0\\xD0\\xB9\\xD1\\x82 RX / TX: '+fmtBytes(st.uart_bytes_rx)+' / '+fmtBytes(st.uart_bytes_tx));"
-    "ln('Overruns: '+st.uart_overruns+' '+(st.uart_overruns?'WARN':'OK'));ln('\\xD0\\x91\\xD0\\xB0\\xD0\\xB9\\xD1\\x82 \\xD0\\xB2 \\xD1\\x81\\xD0\\xB5\\xD1\\x82\\xD1\\x8C / \\xD0\\xB8\\xD0\\xB7 \\xD1\\x81\\xD0\\xB5\\xD1\\x82\\xD0\\xB8: '+fmtBytes(st.net_bytes_to_gcs)+' / '+fmtBytes(st.net_bytes_from_gcs));"
-    "ln('TCP connect / disconnect: '+(st.tcp_connects_total||0)+' / '+(st.tcp_disconnects_total||0));ln('');}"
-    "if(smp){ln('=== RX (UART): \\xD0\\xB0\\xD0\\xB2\\xD1\\x82\\xD0\\xBE\\xD0\\xBF\\xD0\\xB8\\xD0\\xBB\\xD0\\xBE\\xD1\\x82 \\xE2\\x86\\x92 ESP, hex ===');"
-    "ln(smp.rx_len?smp.rx_hex:'(\\xD0\\xBD\\xD0\\xB5\\xD1\\x82 \\xD1\\x82\\xD1\\x80\\xD0\\xB0\\xD1\\x84\\xD0\\xB8\\xD0\\xBA\\xD0\\xB0 \\xD1\\x81 UART \\xD0\\xB0\\xD0\\xB2\\xD1\\x82\\xD0\\xBE\\xD0\\xBF\\xD0\\xB8\\xD0\\xBB\\xD0\\xBE\\xD1\\x82\\xD0\\xB0)');ln('\\xD0\\x94\\xD0\\xBB\\xD0\\xB8\\xD0\\xBD\\xD0\\xB0: '+(smp.rx_len||0)+' \\xD0\\xB1\\xD0\\xB0\\xD0\\xB9\\xD1\\x82');ln('');"
-    "ln('=== TX (UART): GCS \\xE2\\x86\\x92 \\xD0\\xB0\\xD0\\xB2\\xD1\\x82\\xD0\\xBE\\xD0\\xBF\\xD0\\xB8\\xD0\\xBB\\xD0\\xBE\\xD1\\x82, hex ===');"
-    "ln(smp.tx_len?smp.tx_hex:'(\\xD0\\xBD\\xD0\\xB5\\xD1\\x82 \\xD0\\xBA\\xD0\\xBE\\xD0\\xBC\\xD0\\xB0\\xD0\\xBD\\xD0\\xB4 \\xD0\\xBE\\xD1\\x82 GCS)');ln('\\xD0\\x94\\xD0\\xBB\\xD0\\xB8\\xD0\\xBD\\xD0\\xB0: '+(smp.tx_len||0)+' \\xD0\\xB1\\xD0\\xB0\\xD0\\xB9\\xD1\\x82');ln('');}else{"
-    "ln('(/api/log/samples \\xD0\\xBD\\xD0\\xB5\\xD0\\xB4\\xD0\\xBE\\xD1\\x81\\xD1\\x82\\xD1\\x83\\xD0\\xBF\\xD0\\xB5\\xD0\\xBD)');ln('');}"
-    "if(st&&st.log&&st.log.length){ln('=== \\xD0\\x9F\\xD0\\xBE\\xD1\\x81\\xD0\\xBB\\xD0\\xB5\\xD0\\xB4\\xD0\\xBD\\xD0\\xB8\\xD0\\xB5 \\xD1\\x81\\xD0\\xBE\\xD0\\xB1\\xD1\\x8B\\xD1\\x82\\xD0\\xB8\\xD1\\x8F MAVLink ===');st.log.slice().reverse().forEach(function(e){ln(e);});ln('');}"
-    "ln('=== \\xD0\\x9F\\xD0\\xA0\\xD0\\x98\\xD0\\x9B\\xD0\\x9E\\xD0\\x96\\xD0\\x95\\xD0\\x9D\\xD0\\x98\\xD0\\x95 A: /api/log/file ===');ln(fileTxt||'(\\xD0\\xBF\\xD1\\x83\\xD1\\x81\\xD1\\x82\\xD0\\xBE)');ln('');"
-    "ln('=== \\xD0\\x9F\\xD0\\xA0\\xD0\\x98\\xD0\\x9B\\xD0\\x9E\\xD0\\x96\\xD0\\x95\\xD0\\x9D\\xD0\\x98\\xD0\\x95 B: /api/log/esp32 ===');ln(espTxt||'(\\xD0\\xBF\\xD1\\x83\\xD1\\x81\\xD1\\x82\\xD0\\xBE)');return L.join(br);}"
+    "function buildUnifiedReportText(st,inf,cli,smp,fileTxt,espTxt){var L=[],ln=function(x){L.push(x);},br=String.fromCharCode(10),T=String.fromCharCode(9);"
+    "function kv(l,v){ln(l);ln(v==null||v===''?'—':String(v));}"
+    "ln('Единый лог (обновлено '+new Date().toLocaleTimeString()+')');"
+    "ln('Сформировано: '+new Date().toLocaleString());ln('');"
+    "ln('СОЕДИНЕНИЕ MAVLINK / MISSIONPLANNER');"
+    "if(st){var conn=!!st.connected;kv('Статус',conn?'Подключено к MissionPlanner/MAVLink':'Нет HEARTBEAT');"
+    "kv('Последний HEARTBEAT',conn?fmtMs(st.heartbeat_age_ms):'—');"
+    "kv('Интервал HB',st.heartbeat_interval_ms?fmtMs(st.heartbeat_interval_ms):'—');"
+    "kv('Ошибок парсинга',fmt(st.mavlink_parse_err));kv('Последняя ошибка',st.last_error||'none');}else{"
+    "kv('Статус','—');kv('Последний HEARTBEAT','—');kv('Интервал HB','—');kv('Ошибок парсинга','—');kv('Последняя ошибка','—');}"
+    "ln('');ln('УСТРОЙСТВО');"
+    "if(inf){kv('Уникальный ID чипа',inf.chip_uid);kv('MAC',inf.esp_mac);}else{kv('Уникальный ID чипа','—');kv('MAC','—');}"
+    "if(st){kv('Uptime',fmtUp(st.uptime));kv('Свободный heap',fmtBytes(st.free_heap)+' (min '+fmtBytes(st.min_free_heap)+', max-блок '+fmtBytes(st.largest_free_block)+')');"
+    "kv('Температура чипа',st.chip_temp_c!=null?st.chip_temp_c.toFixed(1)+' °C':null);}else{kv('Uptime','—');kv('Свободный heap','—');kv('Температура чипа','—');}"
+    "ln('');ln('WI-FI / СИГНАЛ');"
+    "if(st){kv('RSSI (сейчас)',st.rssi_now!=null?st.rssi_now+' dBm':null);"
+    "kv('Мин / Макс / Средн.',(st.rssi_min!=null?st.rssi_min:'—')+' / '+(st.rssi_max!=null?st.rssi_max:'—')+' / '+(st.rssi_avg!=null?st.rssi_avg:'—')+' dBm');"
+    "kv('AP assoc / disassoc',(st.ap_assoc_total||0)+' / '+(st.ap_disassoc_total||0));kv('STA реконнектов',fmt(st.sta_reconnects_total));}else{"
+    "kv('RSSI (сейчас)','—');kv('Мин / Макс / Средн.','—');kv('AP assoc / disassoc','—');kv('STA реконнектов','—');}"
+    "ln('');ln('ПОДКЛЮЧЁННЫЕ КЛИЕНТЫ');"
+    "if(cli){ln('ПРОТОКОЛ'+T+'IP : ПОРТ'+T+'СОЕДИНЕНИЕ'+T+'БАЙТ В / ИЗ ESP'+T+'ОЧЕРЕДЬ');var rows=0;"
+    "if(cli.tcp){cli.tcp.forEach(function(t){ln('TCP'+T+t.peer+T+fmtMs(t.connected_ms)+T+fmtBytes(t.bytes_in)+' / '+fmtBytes(t.bytes_out)+T+t.queue_used+'/'+t.queue_size+(t.drop_bytes?' (drop '+t.drop_bytes+')':''));rows++;});}"
+    "if(cli.udp){ln('UDP'+T+cli.udp.peer+T+'посл. '+fmtMs(cli.udp.last_packet_ms)+' назад'+T+fmtBytes(cli.udp.bytes_in)+' / '+fmtBytes(cli.udp.bytes_out)+T+'—');rows++;}"
+    "if(!rows)ln('—'+T+'—'+T+'клиенты не подключены'+T+'—'+T+'—');}else{ln('—'+T+'—'+T+'данные /api/clients недоступны'+T+'—'+T+'—');}"
+    "ln('');ln('ПАКЕТЫ MAVLINK');"
+    "if(st){kv('Получено RX',fmt(st.mavlink_rx_pkts));kv('Отправлено в GCS (TX)',fmt(st.mavlink_bridge_tx_pkts));"
+    "kv('Потеряно (seq-gap)',fmt(st.mavlink_rx_lost));kv('Всего обработано',fmt((Number(st.mavlink_rx_pkts||0)+Number(st.mavlink_rx_lost||0))));"
+    "var lp=st.mavlink_loss_pct!=null?Number(st.mavlink_loss_pct):0;kv('Доля потерь',isNaN(lp)?'—':lp.toFixed(2)+'% '+(lp<5?'OK':'HIGH'));}else{"
+    "kv('Получено RX','—');kv('Отправлено в GCS (TX)','—');kv('Потеряно (seq-gap)','—');kv('Всего обработано','—');kv('Доля потерь','—');}"
+    "ln('');ln('UART (АВТОПИЛОТ)');"
+    "if(st){kv('Байт RX / TX',fmtBytes(st.uart_bytes_rx)+' / '+fmtBytes(st.uart_bytes_tx));"
+    "kv('Overruns',String(st.uart_overruns)+' '+(st.uart_overruns?'WARN':'OK'));"
+    "kv('Байт в сеть / из сети',fmtBytes(st.net_bytes_to_gcs)+' / '+fmtBytes(st.net_bytes_from_gcs));"
+    "kv('TCP connect / disconnect',(st.tcp_connects_total||0)+' / '+(st.tcp_disconnects_total||0));}else{"
+    "kv('Байт RX / TX','—');kv('Overruns','—');kv('Байт в сеть / из сети','—');kv('TCP connect / disconnect','—');}"
+    "ln('');ln('ПОСЛЕДНИЙ RX-ПАКЕТ (HEX)');"
+    "if(smp){ln(smp.rx_len?smp.rx_hex:'(нет данных)');ln('Длина: '+(smp.rx_len||0)+' байт');}else{ln('(нет данных)');ln('Длина: —');}"
+    "ln('');ln('ПОСЛЕДНИЙ TX-ПАКЕТ (HEX)');"
+    "if(smp){ln(smp.tx_len?smp.tx_hex:'(нет данных)');ln('Длина: '+(smp.tx_len||0)+' байт');}else{ln('(нет данных)');ln('Длина: —');}"
+    "ln('');ln('Последние события MAVLink');"
+    "if(st&&st.log&&st.log.length){st.log.slice().reverse().forEach(function(e){ln(e);});}else{ln('—');}"
+    "ln('');ln('ПРИЛОЖЕНИЕ A: ПОЛНЫЙ ЛОГ МОСТА (/api/log/file)');ln(fileTxt||'(пусто)');"
+    "ln('');ln('ПРИЛОЖЕНИЕ B: ПОЛНЫЙ ЛОГ ESP32 (/api/log/esp32)');ln(espTxt||'(пусто)');return L.join(br);}"
     "async function downloadUnifiedTxt(){var st,inf,cli,smp,fileTxt,espTxt;"
     "try{st=await jget('/api/status');inf=await jget('/api/system/info');cli=await jget('/api/clients');smp=await jget('/api/log/samples');"
     "fileTxt=await jtext('/api/log/file');espTxt=await jtext('/api/log/esp32');}catch(e){alert('Ошибка загрузки');return;}"
@@ -960,7 +963,7 @@ static const char PROGMEM kLogPageHtml[] =
     "</script></body></html>";
 
 static void handleLogPage(AsyncWebServerRequest* req) {
-    AsyncWebServerResponse* r = req->beginResponse_P(200, "text/html; charset=utf-8", kLogPageHtml);
+    AsyncWebServerResponse* r = req->beginResponse(200, "text/html; charset=utf-8", kLogPageHtml);
     req->send(r);
 }
 
@@ -1062,7 +1065,7 @@ static const char PROGMEM kEspLogPageHtml[] =
     "</script></body></html>";
 
 static void handleEsp32LogPage(AsyncWebServerRequest* req) {
-    AsyncWebServerResponse* r = req->beginResponse_P(200, "text/html; charset=utf-8", kEspLogPageHtml);
+    AsyncWebServerResponse* r = req->beginResponse(200, "text/html; charset=utf-8", kEspLogPageHtml);
     req->send(r);
 }
 
