@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -100,6 +101,106 @@ namespace BrigeLogCopy
             if (!Directory.Exists(path))
                 return false;
             return Directory.EnumerateFileSystemEntries(path).Any();
+        }
+
+        /// <summary>Папка для «быстрого» экспорта (Единый лог.txt, Esp32Log.txt, Json.txt).</summary>
+        public static string ResolveLogExportDirectory()
+        {
+            string raw = ConfigurationManager.AppSettings["LogExportDirectory"];
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                    "Downloads", "Telegram Desktop");
+            }
+            return Environment.ExpandEnvironmentVariables(raw.Trim());
+        }
+
+        public static bool IsLogExportEnabled()
+        {
+            string v = ConfigurationManager.AppSettings["LogExportEnabled"];
+            if (string.IsNullOrWhiteSpace(v))
+                return true;
+            v = v.Trim();
+            return !string.Equals(v, "false", StringComparison.OrdinalIgnoreCase) && v != "0";
+        }
+
+        /// <summary>«Единый лог.txt» или «Единый лог 2.txt», если первый уже занят.</summary>
+        public static string AllocateUnifiedLogExportPath(string directory)
+        {
+            Directory.CreateDirectory(directory);
+            string first = Path.Combine(directory, "Единый лог.txt");
+            if (!File.Exists(first))
+                return first;
+            for (int i = 2; i < 1000; i++)
+            {
+                string p = Path.Combine(directory, "Единый лог " + i + ".txt");
+                if (!File.Exists(p))
+                    return p;
+            }
+            return Path.Combine(directory, "Единый лог " + DateTime.Now.ToString("yyyyMMdd_HHmmss") + ".txt");
+        }
+
+        /// <summary>Результат дополнительного сохранения в LogExportDirectory.</summary>
+        public class QuickExportResult
+        {
+            public string UnifiedLogPath;
+            public string Esp32LogPath;
+            public string MavlinkJsonPath;
+            public readonly List<string> Errors = new List<string>();
+            public bool AnyOk =>
+                !string.IsNullOrEmpty(UnifiedLogPath)
+                || !string.IsNullOrEmpty(Esp32LogPath)
+                || !string.IsNullOrEmpty(MavlinkJsonPath);
+        }
+
+        /// <summary>
+        /// Сохраняет три файла в стиле «Telegram Desktop»:
+        /// Единый лог(.txt / … 2.txt), Esp32Log.txt, Json.txt (лог пакетов MAVLink с /api/log).
+        /// </summary>
+        public static async Task<QuickExportResult> ExportQuickLogsToFolderAsync(string bridgeBaseUrl, string exportDirectory)
+        {
+            var result = new QuickExportResult();
+            var utf8 = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+            Directory.CreateDirectory(exportDirectory);
+
+            try
+            {
+                string uPath = AllocateUnifiedLogExportPath(exportDirectory);
+                string content = await BridgeLogClient.DownloadUnifiedLogAsync(bridgeBaseUrl).ConfigureAwait(false);
+                File.WriteAllText(uPath, content ?? "", utf8);
+                result.UnifiedLogPath = uPath;
+            }
+            catch (Exception ex)
+            {
+                result.Errors.Add("Единый лог: " + ex.Message);
+            }
+
+            try
+            {
+                string p = Path.Combine(exportDirectory, "Esp32Log.txt");
+                string content = await BridgeLogClient.DownloadEspLogAsync(bridgeBaseUrl).ConfigureAwait(false);
+                File.WriteAllText(p, content ?? "", utf8);
+                result.Esp32LogPath = p;
+            }
+            catch (Exception ex)
+            {
+                result.Errors.Add("Esp32Log.txt: " + ex.Message);
+            }
+
+            try
+            {
+                string p = Path.Combine(exportDirectory, "Json.txt");
+                string content = await BridgeLogClient.DownloadMavlinkLogJsonAsync(bridgeBaseUrl).ConfigureAwait(false);
+                File.WriteAllText(p, content ?? "", utf8);
+                result.MavlinkJsonPath = p;
+            }
+            catch (Exception ex)
+            {
+                result.Errors.Add("Json.txt: " + ex.Message);
+            }
+
+            return result;
         }
     }
 }

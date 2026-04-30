@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <esp_system.h>
+#include <freertos/portmacro.h>
 #include <esp_efuse.h>
 #if __has_include(<esp_efuse_chip.h>)
 #  include <esp_efuse_chip.h>
@@ -44,6 +45,9 @@ static uint16_t s_rxLen = 0, s_txLen = 0;
 static bool s_idDone = false;
 static char s_lastError[LAST_ERROR_LEN] = "";
 static char s_lastUartError[LAST_UART_ERROR_LEN] = "none";
+
+/* UART-task и AsyncWebServer читают/пишут образцы с разных ядер — без мьютекса возможны гонки и «пустой» hex в /api/log/samples. */
+static portMUX_TYPE s_sampleMux = portMUX_INITIALIZER_UNLOCKED;
 
 /**
  * Формирует уникальный ID чипа один раз и кэширует. Приоритет:
@@ -106,28 +110,38 @@ void bridgeLogUpdateRssi(int8_t rssi_dbm) {
 }
 
 void bridgeLogSetLastRx(const uint8_t* data, uint16_t len) {
-    if (!data) return;
-    s_rxLen = len < SAMPLE_MAX ? len : SAMPLE_MAX;
-    memcpy(s_rxSample, data, s_rxLen);
+    if (!data || len == 0) return;
+    uint16_t n = len < SAMPLE_MAX ? len : SAMPLE_MAX;
+    portENTER_CRITICAL(&s_sampleMux);
+    s_rxLen = n;
+    memcpy(s_rxSample, data, n);
+    portEXIT_CRITICAL(&s_sampleMux);
 }
 
 void bridgeLogSetLastTx(const uint8_t* data, uint16_t len) {
-    if (!data) return;
-    s_txLen = len < SAMPLE_MAX ? len : SAMPLE_MAX;
-    memcpy(s_txSample, data, s_txLen);
+    if (!data || len == 0) return;
+    uint16_t n = len < SAMPLE_MAX ? len : SAMPLE_MAX;
+    portENTER_CRITICAL(&s_sampleMux);
+    s_txLen = n;
+    memcpy(s_txSample, data, n);
+    portEXIT_CRITICAL(&s_sampleMux);
 }
 
 uint16_t bridgeLogGetLastRxSample(uint8_t* buf, uint16_t bufSize) {
     if (!buf || bufSize == 0) return 0;
+    portENTER_CRITICAL(&s_sampleMux);
     uint16_t n = s_rxLen < bufSize ? s_rxLen : bufSize;
     memcpy(buf, s_rxSample, n);
+    portEXIT_CRITICAL(&s_sampleMux);
     return n;
 }
 
 uint16_t bridgeLogGetLastTxSample(uint8_t* buf, uint16_t bufSize) {
     if (!buf || bufSize == 0) return 0;
+    portENTER_CRITICAL(&s_sampleMux);
     uint16_t n = s_txLen < bufSize ? s_txLen : bufSize;
     memcpy(buf, s_txSample, n);
+    portEXIT_CRITICAL(&s_sampleMux);
     return n;
 }
 
@@ -195,10 +209,18 @@ size_t bridgeLogGetText(char* buf, size_t bufSize) {
         mavlinkGetCountersString(cntBuf, sizeof(cntBuf));
         pos += (size_t)snprintf(buf + pos, bufSize - pos, "%s\n", cntBuf);
     }
-    pos += (size_t)snprintf(buf + pos, bufSize - pos, "--- 1 пакет RX (образец) ---\n");
-    appendHexLine(buf, &pos, bufSize, s_rxSample, s_rxLen);
-    pos += (size_t)snprintf(buf + pos, bufSize - pos, "--- 1 пакет TX (образец) ---\n");
-    appendHexLine(buf, &pos, bufSize, s_txSample, s_txLen);
+    uint8_t rxCp[SAMPLE_MAX], txCp[SAMPLE_MAX];
+    uint16_t rxLc = 0, txLc = 0;
+    portENTER_CRITICAL(&s_sampleMux);
+    rxLc = s_rxLen;
+    txLc = s_txLen;
+    if (rxLc) memcpy(rxCp, s_rxSample, rxLc);
+    if (txLc) memcpy(txCp, s_txSample, txLc);
+    portEXIT_CRITICAL(&s_sampleMux);
+    pos += (size_t)snprintf(buf + pos, bufSize - pos, "--- Образец RX (UART от автопилота, FC→ESP) ---\n");
+    appendHexLine(buf, &pos, bufSize, rxCp, rxLc);
+    pos += (size_t)snprintf(buf + pos, bufSize - pos, "--- Образец TX (от GCS в UART, MP→FC) ---\n");
+    appendHexLine(buf, &pos, bufSize, txCp, txLc);
     pos += (size_t)snprintf(buf + pos, bufSize - pos, "--- Последние MAVLink события ---\n");
     for (uint8_t n = 0; n < MAVLINK_LOG_TAIL && pos < bufSize - MAVLINK_LOG_ENTRY_LEN - 2; n++) {
         uint8_t idx = (mavlinkLogHead + MAVLINK_LOG_SIZE - 1 - n) % MAVLINK_LOG_SIZE;

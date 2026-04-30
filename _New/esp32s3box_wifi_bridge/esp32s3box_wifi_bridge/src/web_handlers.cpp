@@ -690,7 +690,7 @@ static void handleApiLogSamples(AsyncWebServerRequest* req) {
     for (uint16_t i = 0; i < txN; i++) p += snprintf(txHex + p, sizeof(txHex) - p, "%02X%s", raw[i], (i + 1 < txN) ? " " : "");
     txHex[p] = '\0';
 
-    char buf[512];
+    char buf[768];
     snprintf(buf, sizeof(buf),
         "{\"rx_len\":%u,\"rx_hex\":\"%s\",\"tx_len\":%u,\"tx_hex\":\"%s\"}",
         (unsigned)rxN, rxHex, (unsigned)txN, txHex);
@@ -810,11 +810,13 @@ static const char PROGMEM kLogPageHtml[] =
     "<div class='k'>TCP connect / disconnect</div><div class='v' id='tcp_cd'>—</div>"
     "</div></div>"
 
-    "<div class='card'><h2>Последний RX-пакет (hex)</h2>"
+    "<div class='card'><h2>RX (UART): автопилот → ESP, hex</h2>"
+    "<p class='muted' style='font-size:clamp(0.72rem,0.6rem+0.25vw,0.82rem);margin:0 0 8px 0'>Пока нет байт с FC по UART — блок пуст (проверьте TX/RX и baud).</p>"
     "<div class='hex' id='rx_sample'>—</div>"
     "<div class='muted' style='font-size:.78rem;margin-top:6px'>Длина: <span id='rx_len'>0</span> байт</div></div>"
 
-    "<div class='card'><h2>Последний TX-пакет (hex)</h2>"
+    "<div class='card'><h2>TX (UART): GCS → автопилот, hex</h2>"
+    "<p class='muted' style='font-size:clamp(0.72rem,0.6rem+0.25vw,0.82rem);margin:0 0 8px 0'>Только команды от Mission Planner/QGC (TCP/UDP→UART). Телеметрия в обратную сторону здесь не показывается.</p>"
     "<div class='hex' id='tx_sample'>—</div>"
     "<div class='muted' style='font-size:.78rem;margin-top:6px'>Длина: <span id='tx_len'>0</span> байт</div></div>"
 
@@ -896,9 +898,9 @@ static const char PROGMEM kLogPageHtml[] =
     "if(rows===0)tb.innerHTML='<tr><td class=\"muted\" colspan=\"5\">Клиенты не подключены</td></tr>';"
     "}"
     "if(smp){"
-    "document.getElementById('rx_sample').textContent=smp.rx_len?smp.rx_hex:'(нет данных)';"
+    "document.getElementById('rx_sample').textContent=smp.rx_len?smp.rx_hex:'(нет трафика с UART автопилота — нет данных FC→ESP)';"
     "document.getElementById('rx_len').textContent=smp.rx_len||0;"
-    "document.getElementById('tx_sample').textContent=smp.tx_len?smp.tx_hex:'(нет данных)';"
+    "document.getElementById('tx_sample').textContent=smp.tx_len?smp.tx_hex:'(нет команд от GCS к автопилоту — откройте Mission Planner и подключитесь по TCP/UDP)';"
     "document.getElementById('tx_len').textContent=smp.tx_len||0;"
     "}"
     "}"

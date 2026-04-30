@@ -163,6 +163,22 @@ namespace BrigeLogCopy
                         MessageBoxIcon.Warning);
                 }
 
+                LogArchiveService.QuickExportResult quick = null;
+                if (LogArchiveService.IsLogExportEnabled())
+                {
+                    try
+                    {
+                        string qDir = LogArchiveService.ResolveLogExportDirectory();
+                        quick = await LogArchiveService.ExportQuickLogsToFolderAsync(bridgeUrl, qDir).ConfigureAwait(true);
+                    }
+                    catch (Exception exQ)
+                    {
+                        if (quick == null)
+                            quick = new LogArchiveService.QuickExportResult();
+                        quick.Errors.Add(exQ.Message);
+                    }
+                }
+
                 bool logsOk = snap != null && snap.AnySaved;
                 if (snap != null && !snap.AllSaved)
                 {
@@ -208,9 +224,28 @@ namespace BrigeLogCopy
                     logsNote = "Часть логов сохранена (" + snap.SavedCount + "/" + snap.TotalCount + "). Повторите попытку для недостающих файлов.";
                 else
                     logsNote = "Логи с моста не сохранены — при необходимости повторите операцию после настройки сети.";
+                string exportNote = "";
+                if (quick != null)
+                {
+                    if (quick.AnyOk)
+                    {
+                        var lines = new System.Text.StringBuilder();
+                        lines.AppendLine("Доп. копии логов:");
+                        if (!string.IsNullOrEmpty(quick.UnifiedLogPath))
+                            lines.AppendLine("• " + quick.UnifiedLogPath);
+                        if (!string.IsNullOrEmpty(quick.Esp32LogPath))
+                            lines.AppendLine("• " + quick.Esp32LogPath);
+                        if (!string.IsNullOrEmpty(quick.MavlinkJsonPath))
+                            lines.AppendLine("• " + quick.MavlinkJsonPath);
+                        exportNote = lines.ToString().TrimEnd() + "\n";
+                    }
+                    if (quick.Errors.Count > 0)
+                        exportNote += "Замечания доп. экспорта:\n  " + string.Join("\n  ", quick.Errors) + "\n";
+                }
                 MessageBox.Show(this,
                     "Готово. Серийный номер: «" + serial + "».\nПапка акта: «" + actFolderName + "».\n" +
                     logsNote + "\n" +
+                    exportNote +
                     "Отчёт Excel:\n" + reportPathDone + "\n" +
                     "В очереди осталось записей: " + remaining + ".",
                     Text,
